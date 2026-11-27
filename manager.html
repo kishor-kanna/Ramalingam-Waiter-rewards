@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Rewards – Manager</title>
+<title>Rewards – Branch Manager</title>
 <style>
 :root{--ink:#111;--mute:#6b6b6b;--line:#e8e8e8;--soft:#f4f4f4;--green:#0e7a43;--red:#b42318}
 *{box-sizing:border-box}
@@ -56,8 +56,9 @@ input[type=checkbox]{width:22px;height:22px;justify-self:center}
 <body>
 <main>
   <section id="loginBox" hidden>
-    <h1>Manager sign-in</h1>
+    <h1>Branch manager sign-in</h1>
     <form id="loginForm">
+      <select id="mbranch" aria-label="Branch" required style="width:100%;font-size:18px;padding:12px;margin-top:12px;border:1px solid #ccc;border-radius:8px;background:#fff"><option value="">Loading…</option></select>
       <input id="mpin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="Manager PIN" aria-label="Manager PIN" autocomplete="off" required>
       <button class="primary" style="width:100%" id="lbtn">Sign in</button>
       <p class="err" id="lerr" role="alert"></p>
@@ -65,11 +66,10 @@ input[type=checkbox]{width:22px;height:22px;justify-self:center}
   </section>
 
   <section id="app" hidden>
-    <div class="head"><h1>Rewards – Manager</h1><button class="link" id="out">Sign out</button></div>
+    <div class="head"><h1 id="title">Rewards</h1><button class="link" id="out">Sign out</button></div>
     <nav id="tabs">
       <button data-tab="today" aria-pressed="true">Today</button>
       <button data-tab="payouts" aria-pressed="false">Payouts</button>
-      <button data-tab="targets" aria-pressed="false">Targets</button>
       <button data-tab="waiters" aria-pressed="false">Waiters</button>
       <button data-tab="settings" aria-pressed="false">Settings</button>
     </nav>
@@ -78,7 +78,7 @@ input[type=checkbox]{width:22px;height:22px;justify-self:center}
       <div class="when" id="todayWhen"></div>
       <div class="banner" id="todaySum"></div>
       <div class="scroll"><table id="todayTable"></table></div>
-      <div class="actions"><button class="ghost" id="refresh">Refresh</button><span class="note">Refreshes every 30 seconds.</span></div>
+      <div class="actions"><button class="ghost" id="refresh">Refresh</button><span class="note">Refreshes every 30 seconds. Targets are set by the operations manager.</span></div>
     </div>
 
     <div id="tab-payouts" hidden>
@@ -96,16 +96,6 @@ input[type=checkbox]{width:22px;height:22px;justify-self:center}
       </div>
     </div>
 
-    <div id="tab-targets" hidden>
-      <p class="note">Every waiter has the same daily target for each item. Changes reach waiters' phones within a minute and apply to today too. Renaming an item starts its count from zero.</p>
-      <form id="targetForm">
-        <div class="erow t lab"><span>Icon</span><span>Item</span><span>Target</span><span>Reward ₹</span><span></span></div>
-        <div id="tlist"></div>
-        <button type="button" class="link" id="addT">+ Add item</button>
-        <div class="actions"><button class="primary">Save targets</button></div>
-      </form>
-    </div>
-
     <div id="tab-waiters" hidden>
       <p class="note">Waiters sign in with their name and PIN. Untick “On” for someone who has left. Their history is kept. If you change a PIN, that phone asks for the new one.</p>
       <form id="waiterForm">
@@ -118,13 +108,7 @@ input[type=checkbox]{width:22px;height:22px;justify-self:center}
 
     <div id="tab-settings" hidden>
       <div class="card">
-        <h2 style="margin-top:0">Daily backup to GitHub</h2>
-        <p class="note" id="ghState"></p>
-        <p class="note">Last run: <span id="lastBackup"></span></p>
-        <button class="ghost" id="backup">Back up yesterday now</button>
-      </div>
-      <div class="card">
-        <h2 style="margin-top:0">Change manager PIN</h2>
+        <h2 style="margin-top:0">Change this branch’s manager PIN</h2>
         <form id="pinForm" class="dates">
           <label>New PIN<input id="np1" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" required></label>
           <label>Repeat<input id="np2" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="8" required></label>
@@ -144,20 +128,20 @@ const $ = id => document.getElementById(id);
 const rs = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const label = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'});
-let pin = '', M = null, P = null, tab = 'today';
-try { pin = localStorage.getItem('rewards-mgr-pin') || ''; } catch (e) {}
+let pin = '', branch = '', M = null, P = null, tab = 'today';
+try { const s = JSON.parse(localStorage.getItem('rewards-branch-mgr') || '{}'); pin = s.pin || ''; branch = s.branch || ''; } catch (e) {}
 
 async function api(action, data) {
   if (API_URL.includes('PASTE_')) throw Object.assign(new Error('This page is not connected to the Google Sheet yet.'), {server: true});
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 30000);
   try {
-    const res = await fetch(API_URL, {method: 'POST', body: JSON.stringify(Object.assign({action, pin}, data)), signal: ctl.signal});
+    const res = await fetch(API_URL, {method: 'POST', body: JSON.stringify(Object.assign({action, pin, branch}, data)), signal: ctl.signal});
     const j = await res.json();
     if (!j.ok) throw Object.assign(new Error(j.error || 'Server error'), {server: true});
     return j;
   } catch (e) {
     if (!e.server) e.message = 'Can’t reach the server. Check your internet.';
-    if (/manager PIN|Too many/.test(e.message) && M) signOut(e.message);
+    if (/PIN|Too many|switched off/.test(e.message) && M) signOut(e.message);
     throw e;
   } finally { clearTimeout(timer); }
 }
@@ -173,9 +157,9 @@ function show() {
   $('loginBox').hidden = !!M; $('app').hidden = !M;
   if (!M) return;
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === tab));
-  ['today', 'payouts', 'targets', 'waiters', 'settings'].forEach(t => $('tab-' + t).hidden = t !== tab);
+  ['today', 'payouts', 'waiters', 'settings'].forEach(t => $('tab-' + t).hidden = t !== tab);
 }
-function renderAll() { renderToday(); renderTargets(); renderWaiters(); renderSettings(); show(); }
+function renderAll() { $('title').textContent = M.branch + (M.asOps ? ' (operations)' : ''); renderToday(); renderWaiters(); show(); }
 
 /* Today */
 function renderToday() {
@@ -192,7 +176,7 @@ function renderToday() {
     `</tbody><tfoot><tr><td>Total</td>${T.map(t => `<td>${names.reduce((a, n) => a + (by[n].c[t.item] || 0), 0)}</td>`).join('')}<td class="money">${rs(total)}</td></tr></tfoot>`;
 }
 async function refreshToday(btn) {
-  await run(btn, async () => { M = await api('m_state', {}); renderToday(); renderSettings(); });
+  await run(btn, async () => { M = await api('m_state', {}); renderToday(); });
 }
 
 /* Payouts */
@@ -231,20 +215,6 @@ async function copy(text, what) {
   toast(what + ' copied. Paste into a spreadsheet');
 }
 
-/* Targets */
-function renderTargets() { $('tlist').innerHTML = ''; M.targets.forEach(addTarget); }
-function addTarget(t) {
-  const d = document.createElement('div'); d.className = 'erow t';
-  d.innerHTML = `<input class="ic" value="${esc(t.icon)}" maxlength="4" aria-label="Icon">
-    <input value="${esc(t.item)}" maxlength="30" aria-label="Item name" required>
-    <input type="number" min="1" value="${t.qty}" aria-label="Target quantity" required>
-    <input type="number" min="0" step="10" value="${t.reward}" aria-label="Reward in rupees" required>
-    <button type="button" class="link" aria-label="Remove item">✕</button>`;
-  d.querySelector('button').onclick = () => d.remove();
-  $('tlist').append(d);
-  return d;
-}
-
 /* Waiters */
 function renderWaiters() { $('wlist').innerHTML = ''; M.waiters.forEach(addWaiter); countWaiters(); }
 function addWaiter(w) {
@@ -268,29 +238,32 @@ function newPin() {
   return p;
 }
 
-/* Settings */
-function renderSettings() {
-  $('ghState').textContent = M.github ? 'Connected. Each morning the previous day is saved as a CSV file in your GitHub repo.'
-    : 'Not set up yet. Totals are still kept in the Google Sheet. See README step 5 to turn this on.';
-  $('lastBackup').textContent = M.lastBackup || 'not yet';
-}
-
 /* Sign in / out */
-async function signIn(p) {
-  pin = p;
+async function signIn(b, p) {
+  branch = b; pin = p;
   M = await api('m_state', {});
-  try { localStorage.setItem('rewards-mgr-pin', p); } catch (e) {}
+  branch = M.branch;
+  try { localStorage.setItem('rewards-branch-mgr', JSON.stringify({branch, pin})); } catch (e) {}
   defaultDates(); renderAll();
 }
 function signOut(msg) {
-  M = null; pin = '';
-  try { localStorage.removeItem('rewards-mgr-pin'); } catch (e) {}
+  M = null; P = null; pin = '';
+  try { localStorage.setItem('rewards-branch-mgr', JSON.stringify({branch})); } catch (e) {}
   $('lerr').textContent = msg || ''; show();
+  if ($('mbranch').options.length > 1) $('mbranch').value = branch; else loadBranches();
+}
+async function loadBranches() {
+  try {
+    const r = await api('branches', {});
+    $('mbranch').innerHTML = (r.branches.length > 1 ? '<option value="">Choose your branch</option>' : '') + r.branches.map(n => `<option>${esc(n)}</option>`).join('');
+    if (branch) $('mbranch').value = branch;
+  } catch (e) { $('mbranch').innerHTML = '<option value="">Can’t load branches</option>'; $('lerr').textContent = e.message; }
 }
 
 $('loginForm').onsubmit = async e => {
   e.preventDefault(); $('lerr').textContent = ''; $('lbtn').disabled = true;
-  try { await signIn($('mpin').value.trim()); $('mpin').value = ''; }
+  if (!$('mbranch').value) { $('lerr').textContent = 'Choose your branch'; $('lbtn').disabled = false; return; }
+  try { await signIn($('mbranch').value, $('mpin').value.trim()); $('mpin').value = ''; }
   catch (err) { pin = ''; $('lerr').textContent = err.message; }
   finally { $('lbtn').disabled = false; }
 };
@@ -306,30 +279,23 @@ $('showPay').onclick = e => showPayouts(e.target);
 $('copySum').onclick = () => copy(csv([['Waiter', 'Days worked', 'Targets hit', 'Earned (Rs)']].concat(payTotals().map(r => [r.name, r.days, r.hits, r.earned]))), 'Totals');
 $('copyDetail').onclick = () => copy(csv([['Date', 'Waiter', 'Item', 'Sold', 'Target', 'Reward', 'Earned']].concat(P.rows.map(r => [r.shift, r.waiter, r.item, r.sold, r.target, r.reward, r.earned]))), 'Detail');
 
-$('addT').onclick = () => addTarget({icon: '🍽️', item: '', qty: 10, reward: 100}).children[1].focus();
-$('targetForm').onsubmit = e => {
-  e.preventDefault();
-  const targets = [...$('tlist').children].map(d => { const i = d.querySelectorAll('input'); return {icon: i[0].value, item: i[1].value, qty: +i[2].value, reward: +i[3].value}; });
-  run(e.submitter, async () => { M = await api('m_targets', {targets}); renderAll(); toast('Targets saved'); });
-};
 $('addW').onclick = () => { addWaiter({name: '', pin: newPin(), active: true}).children[0].focus(); countWaiters(); };
 $('waiterForm').onsubmit = e => {
   e.preventDefault();
   const waiters = [...$('wlist').children].map(d => { const i = d.querySelectorAll('input'); return {name: i[0].value, pin: i[1].value, active: i[2].checked}; });
   run(e.submitter, async () => { M = await api('m_waiters', {waiters}); renderAll(); toast('Waiters saved'); });
 };
-$('backup').onclick = e => run(e.target, async () => { const r = await api('m_backup', {}); toast('Backup done'); M = await api('m_state', {}); renderSettings(); $('lastBackup').textContent = M.lastBackup; });
 $('pinForm').onsubmit = e => {
   e.preventDefault();
   const a = $('np1').value, b = $('np2').value;
   if (!/^\d{4,8}$/.test(a)) return toast('Use 4 to 8 digits', true);
   if (a !== b) return toast('The two PINs don’t match', true);
-  run(e.submitter, async () => { await api('m_pin', {newPin: a}); pin = a; try { localStorage.setItem('rewards-mgr-pin', a); } catch (x) {} $('pinForm').reset(); toast('Manager PIN changed'); });
+  run(e.submitter, async () => { await api('m_pin', {newPin: a}); if (!M.asOps) { pin = a; try { localStorage.setItem('rewards-branch-mgr', JSON.stringify({branch, pin})); } catch (x) {} } $('pinForm').reset(); toast('Branch PIN changed'); });
 };
 
 setInterval(() => { if (M && tab === 'today' && !document.hidden) refreshToday(); }, 30000);
 show();
-if (pin) signIn(pin).catch(e => signOut(e.message)); else show();
+if (pin) signIn(branch, pin).catch(e => signOut(e.message)); else { show(); loadBranches(); }
 </script>
 </body>
 </html>

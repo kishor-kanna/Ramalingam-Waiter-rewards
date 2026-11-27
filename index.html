@@ -53,7 +53,8 @@ label select,label input{display:block;width:100%;margin-top:6px;padding:12px;bo
     <h1 style="margin-top:24px">Daily Rewards</h1>
     <p class="when">Sign in once on this phone.</p>
     <form id="loginForm">
-      <label>Your name<select id="lname" required><option value="">Loading…</option></select></label>
+      <label>Branch<select id="lbranch" required><option value="">Loading…</option></select></label>
+      <label>Your name<select id="lname" required><option value="">Choose a branch first</option></select></label>
       <label>PIN<input id="lpin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" required></label>
       <button class="primary" id="lbtn">Sign in</button>
       <p class="err" id="lerr" role="alert"></p>
@@ -62,7 +63,7 @@ label select,label input{display:block;width:100%;margin-top:6px;padding:12px;bo
 
   <section id="app" hidden>
     <div class="head"><h1>Today's rewards</h1><button class="link" id="out">Sign out</button></div>
-    <div class="when"><span id="who"></span> · <span id="date"></span></div>
+    <div class="when"><span id="who"></span> · <span id="where"></span> · <span id="date"></span></div>
     <div class="status" id="status" role="status"></div>
     <div class="banner" id="banner"></div>
     <div class="earned"><span>Earned today</span><b id="earned"></b></div>
@@ -131,6 +132,7 @@ function render() {
   if (!signedIn) return;
   const c = counts(), T = targets(), max = T.reduce((a, t) => a + t.reward, 0), earned = earnedNow(c);
   $('who').textContent = S.user.name;
+  $('where').textContent = S.user.branch || (S.server && S.server.branch) || '';
   $('date').textContent = label(shiftOf(Date.now()));
   $('earned').textContent = rs(earned);
   $('banner').textContent = !S.server ? 'Loading today’s targets…'
@@ -178,7 +180,8 @@ async function sync() {
   syncing = true; render();
   const batch = S.queue.slice(0, 100);
   try {
-    const res = await api(batch.length ? 'sync' : 'today', {name: S.user.name, pin: S.user.pin, events: batch});
+    const res = await api(batch.length ? 'sync' : 'today', {branch: S.user.branch, name: S.user.name, pin: S.user.pin, events: batch});
+    S.user.branch = res.branch;
     const sent = new Set(batch.map(e => e.id));
     S.queue = S.queue.filter(e => !sent.has(e.id));
     S.server = res; S.error = ''; backoff = 0; save();
@@ -187,7 +190,7 @@ async function sync() {
     if (e.server && /PIN|switched off/i.test(e.message)) {
       S.user.pin = null; save();               // keep the name and unsent taps; ask for the PIN again
       $('lerr').textContent = e.message + (S.queue.length ? ' Your unsent taps are kept.' : '');
-      loadNames();
+      loadBranches();
     } else {
       S.error = e.server ? e.message : 'no internet';
       backoff = Math.min(60000, (backoff || 2500) * 2);
@@ -196,26 +199,42 @@ async function sync() {
   } finally { syncing = false; render(); }
 }
 
-async function loadNames() {
+async function loadBranches() {
   try {
-    const r = await api('waiters', {});
+    const r = await api('branches', {});
+    $('lbranch').innerHTML = (r.branches.length > 1 ? '<option value="">Choose your branch</option>' : '') + r.branches.map(n => `<option>${esc(n)}</option>`).join('');
+    if (S.user && S.user.branch) $('lbranch').value = S.user.branch;
+    if ($('lbranch').value) loadNames();
+  } catch (e) {
+    $('lbranch').innerHTML = '<option value="">Can’t load branches</option>';
+    $('lerr').textContent = e.server ? e.message : 'Can’t reach the server. Check your internet and reload.';
+  }
+}
+async function loadNames() {
+  const branch = $('lbranch').value;
+  $('lname').innerHTML = '<option value="">' + (branch ? 'Loading…' : 'Choose a branch first') + '</option>';
+  if (!branch) return;
+  try {
+    const r = await api('waiters', {branch});
+    if ($('lbranch').value !== branch) return;
     $('lname').innerHTML = '<option value="">Choose your name</option>' + r.names.map(n => `<option>${esc(n)}</option>`).join('');
-    if (S.user) $('lname').value = S.user.name;
+    if (S.user && S.user.branch === branch) $('lname').value = S.user.name;
   } catch (e) {
     $('lname').innerHTML = '<option value="">Can’t load names</option>';
     $('lerr').textContent = e.server ? e.message : 'Can’t reach the server. Check your internet and reload.';
   }
 }
+$('lbranch').onchange = loadNames;
 
 $('loginForm').onsubmit = async e => {
   e.preventDefault();
-  const name = $('lname').value, pin = $('lpin').value.trim();
-  if (!name) return;
+  const branch = $('lbranch').value, name = $('lname').value, pin = $('lpin').value.trim();
+  if (!branch || !name) return;
   $('lbtn').disabled = true; $('lerr').textContent = '';
   try {
-    const res = await api('today', {name, pin});
-    if (S.user && S.user.name !== res.name) { S.queue = []; S.undo = {shift: '', stack: []}; }
-    S.user = {name: res.name, pin}; S.server = res; S.error = '';
+    const res = await api('today', {branch, name, pin});
+    if (S.user && (S.user.name !== res.name || (S.user.branch && S.user.branch !== res.branch))) { S.queue = []; S.undo = {shift: '', stack: []}; }
+    S.user = {branch: res.branch, name: res.name, pin}; S.server = res; S.error = '';
     save(); $('lpin').value = ''; render();
     if (S.queue.length) sync();
   } catch (err) {
@@ -228,7 +247,7 @@ $('undo').onclick = () => { const st = undoStack(); if (st.length) record(st[st.
 $('out').onclick = () => {
   if (S.queue.length) { toast('Wait — taps still saving'); sync(); return; }
   S = {user: null, server: null, queue: [], undo: {shift: '', stack: []}, error: ''};
-  save(); loadNames(); render();
+  save(); loadBranches(); render();
 };
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); sync(); } });
@@ -236,7 +255,7 @@ addEventListener('online', () => { backoff = 0; sync(); });
 setInterval(() => { render(); if (!S.queue.length) sync(); }, 60000);   // refresh targets and roll over at the day change
 
 render();
-if (S.user && S.user.pin) sync(); else loadNames();
+if (S.user && S.user.pin) sync(); else loadBranches();
 </script>
 </body>
 </html>
