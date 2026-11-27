@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-waiter.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <main>
@@ -38,8 +38,22 @@
     <div class="earned"><span>Earned today</span><b id="earned"></b></div>
     <div id="tiers"></div>
     <p class="center"><button class="link" id="undo">Undo</button></p>
-    <h2>Last 7 days</h2>
-    <div id="history" class="items big"></div>
+    <section class="month" aria-labelledby="mtitle">
+      <div class="mhead">
+        <button class="mnav" id="mprev" aria-label="Previous month">‹</button>
+        <h2 id="mtitle">This month</h2>
+        <button class="mnav" id="mnext" aria-label="Next month">›</button>
+      </div>
+      <div class="stats">
+        <div><b id="mEarned">₹0</b><span>Earned</span></div>
+        <div><b id="mDays">0</b><span>Days worked</span></div>
+        <div><b id="mHits">0</b><span>Targets hit</span></div>
+      </div>
+      <div id="mItems" class="items big"></div>
+      <h3 id="mDayTitle">Day by day</h3>
+      <div id="mList" class="items big"></div>
+      <p class="note center" id="mNote"></p>
+    </section>
   </section>
 </main>
 <div id="toast"></div>
@@ -119,13 +133,66 @@ function render() {
   const st = undoStack(), last = st[st.length - 1];
   $('undo').textContent = last ? `Undo last: ${last}` : 'Undo';
   $('undo').disabled = !last;
-  $('history').innerHTML = (S.server ? S.server.history : []).map(h => `<div><span>${label(h.shift)}</span><b>${rs(h.earned)}</b></div>`).join('');
+  renderMonth();
   const n = S.queue.length, s = $('status');
   s.className = 'status' + (S.error && n ? ' warn' : '');
   s.textContent = syncing ? 'Saving…'
     : n ? `${n} tap${n > 1 ? 's' : ''} not saved yet${S.error ? ' (' + S.error + ')' : ''}. Retrying…`
     : S.server ? 'All saved ✓' : '';
 }
+
+/* This month: totals from the Sheet; today's line uses the live counts on this phone. */
+const thisMonth = () => shiftOf(Date.now()).slice(0, 7);
+let viewMonth = thisMonth(), monthBusy = false;
+const monthName = m => new Date(m + '-15T12:00:00').toLocaleDateString('en-IN', {month: 'long', year: 'numeric'});
+const shiftMonth = (m, n) => { const d = new Date(m + '-15T12:00:00'); d.setMonth(d.getMonth() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+const months = () => (S.months = S.months || {});
+
+async function loadMonth(m) {
+  if (!S.user || !S.user.pin || monthBusy) return;
+  monthBusy = true;
+  try {
+    const r = await api('w_month', {branch: S.user.branch, name: S.user.name, pin: S.user.pin, month: m || viewMonth});
+    months()[r.month] = r; S.monthError = ''; save();
+  } catch (e) {
+    S.monthError = /Unknown action/.test(e.message) ? 'Monthly history will show after the next update.' : (months()[viewMonth] ? '' : 'Can’t load this month right now.');
+  } finally { monthBusy = false; renderMonth(); }
+}
+
+function renderMonth() {
+  if (!S.user || !S.server) return;
+  const now = thisMonth(), data = months()[viewMonth] || {days: [], items: []}, today = shiftOf(Date.now());
+  const icon = {}; targets().forEach(t => icon[t.item] = t.icon);
+  let days = data.days.map(d => Object.assign({}, d, {items: Object.assign({}, d.items)}));
+  const items = {}; data.items.forEach(i => items[i.item] = Object.assign({}, i));
+  if (viewMonth === now) {
+    // swap in today's live numbers so a tap shows up here straight away
+    const old = days.find(d => d.shift === today);
+    if (old) Object.entries(old.items).forEach(([k, n]) => { const it = items[k]; if (it) { it.sold -= n; if (old.earned && targets().some(t => t.item === k && n >= t.qty)) { it.hits--; it.earned -= targets().find(t => t.item === k).reward; } } });
+    days = days.filter(d => d.shift !== today);
+    const c = counts(), live = {shift: today, earned: earnedNow(c), items: {}};
+    targets().forEach(t => {
+      const n = c[t.item] || 0; if (!n) return;
+      live.items[t.item] = n;
+      const it = items[t.item] = items[t.item] || {item: t.item, icon: t.icon, sold: 0, hits: 0, earned: 0};
+      it.sold += n; if (n >= t.qty) { it.hits++; it.earned += t.reward; }
+    });
+    if (Object.keys(live.items).length) days.unshift(live);
+  }
+  const list = Object.values(items).filter(i => i.sold > 0);
+  $('mtitle').textContent = viewMonth === now ? 'This month' : monthName(viewMonth);
+  $('mprev').disabled = viewMonth <= shiftMonth(now, -12);
+  $('mnext').disabled = viewMonth >= now;
+  $('mEarned').textContent = rs(days.reduce((a, d) => a + d.earned, 0));
+  $('mDays').textContent = days.length;
+  $('mHits').textContent = list.reduce((a, i) => a + i.hits, 0);
+  $('mItems').innerHTML = list.map(i => `<div><span>${esc(i.icon || icon[i.item] || '')} ${esc(i.item)}</span><span>${i.sold} sold${i.hits ? ` · <b class="ok">${i.hits}× target</b>` : ''}</span></div>`).join('');
+  $('mDayTitle').hidden = !days.length;
+  $('mList').innerHTML = days.map(d => `<div class="day"><span><b>${d.shift === today ? 'Today' : label(d.shift)}</b><small>${Object.entries(d.items).map(([k, n]) => n + ' ' + esc(k)).join(' · ')}</small></span><b class="${d.earned ? 'ok' : ''}">${rs(d.earned)}</b></div>`).join('');
+  $('mNote').textContent = S.monthError || (days.length ? '' : (viewMonth === now ? 'Your sales this month will show here.' : 'No sales in ' + monthName(viewMonth) + '.'));
+}
+$('mprev').onclick = () => { viewMonth = shiftMonth(viewMonth, -1); renderMonth(); loadMonth(); };
+$('mnext').onclick = () => { viewMonth = shiftMonth(viewMonth, 1); renderMonth(); loadMonth(); };
 
 let toastTimer;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200); }
@@ -203,7 +270,9 @@ $('loginForm').onsubmit = async e => {
   try {
     const res = await api('today', {branch, name, pin});
     if (S.user && (S.user.name !== res.name || (S.user.branch && S.user.branch !== res.branch))) { S.queue = []; S.undo = {shift: '', stack: []}; }
+    if (S.user && S.user.name !== res.name) S.months = {};
     S.user = {branch: res.branch, name: res.name, pin}; S.server = res; S.error = '';
+    viewMonth = thisMonth(); loadMonth();
     save(); $('lpin').value = ''; render();
     if (S.queue.length) sync();
   } catch (err) {
@@ -215,16 +284,17 @@ $('tiers').onclick = e => { const b = e.target.closest('button[data-item]'); if 
 $('undo').onclick = () => { const st = undoStack(); if (st.length) record(st[st.length - 1], -1); };
 $('out').onclick = () => {
   if (S.queue.length) { toast('Wait — taps still saving'); sync(); return; }
-  S = {user: null, server: null, queue: [], undo: {shift: '', stack: []}, error: ''};
+  S = {user: null, server: null, queue: [], undo: {shift: '', stack: []}, error: '', months: {}};
   save(); loadBranches(); render();
 };
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); sync(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); sync(); loadMonth(); } });
 addEventListener('online', () => { backoff = 0; sync(); });
-setInterval(() => { render(); if (!S.queue.length) sync(); }, 60000);   // refresh targets and roll over at the day change
+setInterval(() => { render(); if (!S.queue.length) sync(); }, 60000);
+setInterval(() => { if (!document.hidden) loadMonth(); }, 300000);   // month totals every 5 minutes   // refresh targets and roll over at the day change
 
 render();
-if (S.user && S.user.pin) sync(); else loadBranches();
+if (S.user && S.user.pin) { sync(); loadMonth(); } else loadBranches();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>

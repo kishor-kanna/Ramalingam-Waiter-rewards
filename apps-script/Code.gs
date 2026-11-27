@@ -31,6 +31,7 @@ const ACTIONS = {
   // waiter
   today: function (r) { return waiterView(waiter(r)); },
   sync: sync,
+  w_month: waiterMonth,
   // branch manager (the ops PIN also opens any branch)
   m_state: managerState,
   m_waiters: saveWaiters,
@@ -308,17 +309,37 @@ function listWaiters(r) {
 
 function waiterView(who, ctx) {
   ctx = ctx || context(who.branch);
-  var shift = shiftOf(new Date()), counts = countsFor(ctx.sales, shift, who.name), history = [];
+  var shift = shiftOf(new Date()), counts = countsFor(ctx.sales, shift, who.name);
   ctx.targets.forEach(function (t) {
     if (counts[t.item] != null && t.qty > 0) counts[t.item] = Math.min(Math.max(0, counts[t.item]), t.qty);
   });
-  for (var i = 1; i <= 7; i++) {
-    var s = addDays(shift, -i);
-    history.push({ shift: s, earned: shiftRows(ctx, s).filter(function (x) { return x.waiter === who.name; })
-      .reduce(function (a, x) { return a + x.earned; }, 0) });
-  }
   return { ok: true, name: who.name, branch: who.branch, shift: shift, resetHour: RESET_HOUR,
-    targets: ctx.targets, counts: counts, history: history };
+    targets: ctx.targets, counts: counts };
+}
+
+/** One waiter's month: totals, per-item totals and each day worked. r.month is "yyyy-MM" (default: this month). */
+function waiterMonth(r) {
+  var who = waiter(r), today = shiftOf(new Date()), m = String(r.month || today.slice(0, 7));
+  if (!/^\d{4}-\d{2}$/.test(m)) throw new Error('Pick a valid month');
+  var y = Number(m.slice(0, 4)), mo = Number(m.slice(5, 7));
+  var next = mo === 12 ? (y + 1) + '-01-01' : y + '-' + ('0' + (mo + 1)).slice(-2) + '-01';
+  var first = m + '-01', last = addDays(next, -1), to = last < today ? last : today;
+  var out = { ok: true, month: m, today: today, days: [], items: [] };
+  if (first > today) return out;
+  var ctx = context(who.branch), icons = {}, order = {}, days = {}, items = {};
+  ctx.targets.forEach(function (t, i) { icons[t.item] = t.icon; order[t.item] = i; });
+  rangeRows(ctx, first, to).forEach(function (x) {
+    if (x.waiter !== who.name || !(x.sold > 0)) return;
+    var d = days[x.shift] = days[x.shift] || { shift: x.shift, earned: 0, items: {} };
+    d.earned += x.earned; d.items[x.item] = (d.items[x.item] || 0) + x.sold;
+    var it = items[x.item] = items[x.item] || { item: x.item, icon: icons[x.item] || '', sold: 0, hits: 0, earned: 0 };
+    it.sold += x.sold; it.earned += x.earned; if (x.earned > 0) it.hits++;
+  });
+  out.days = Object.keys(days).sort().reverse().map(function (k) { return days[k]; });
+  out.items = Object.keys(items).map(function (k) { return items[k]; }).sort(function (a, b) {
+    return (order[a.item] == null ? 99 : order[a.item]) - (order[b.item] == null ? 99 : order[b.item]);
+  });
+  return out;
 }
 
 /** Saves queued taps. Each tap has an id, so a retry after a dropped connection is not counted twice. */

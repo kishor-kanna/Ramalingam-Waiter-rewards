@@ -47,7 +47,7 @@ input[type=checkbox]{width:24px;height:24px;min-height:0;margin:0;padding:0;just
 .primary,.add{border:0;border-radius:12px;padding:12px 18px;min-height:48px;background:var(--brand-btn);color:#fff;font-weight:600}
 .primary:active,.add:active{filter:brightness(.9)}
 .primary:disabled{opacity:.55}
-.add{display:block;width:100%;margin-top:12px}
+.add{display:block;width:100%;margin-top:12px;background:#1a1a1a}
 .add:disabled{background:var(--brand-soft);color:var(--brand-ink);cursor:default;filter:none}
 .ghost{border:1px solid #d9d5ca;border-radius:12px;padding:11px 16px;min-height:46px;background:#fff;font-weight:600}
 .ghost:active{background:var(--soft)}
@@ -81,6 +81,22 @@ input[type=checkbox]{width:24px;height:24px;min-height:0;margin:0;padding:0;just
 .items .ok{color:var(--brand-ink);font-weight:600}
 .items.big{font-size:15px}
 .items.big div{padding:9px 0;border-bottom:1px solid var(--line)}
+
+/* Waiter month view */
+.month{margin-top:28px;padding-top:18px;border-top:1px solid var(--line)}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mhead h2{margin:0;text-align:center}
+.mnav{width:44px;height:44px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:22px;line-height:1}
+.mnav:disabled{opacity:.3;cursor:default}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 6px}
+.stats div{background:var(--soft);border-radius:12px;padding:10px 6px;text-align:center}
+.stats b{display:block;font-size:20px;color:var(--brand-ink)}
+.stats span{font-size:12px;color:var(--mute)}
+h3{font-size:15px;margin:18px 0 2px}
+.items .day span{display:flex;flex-direction:column;gap:2px;min-width:0}
+.items .day small{color:var(--mute);font-size:13px}
+.items .day span b{color:var(--ink)}
+.items b.ok{color:var(--brand-ink)}
 
 /* Tabs */
 nav{display:flex;gap:4px;padding:4px;margin:0 0 12px;background:var(--soft);border-radius:12px;overflow-x:auto;scrollbar-width:none}
