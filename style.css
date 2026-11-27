@@ -6,7 +6,6 @@
   --brand-ink:#7b1e3a;    /* burgundy text */
   --brand-soft:#f7ebee;
   --red:#b42318; --red-soft:#fdecea;
-  --serif:Georgia,"Times New Roman",serif;
   --top:env(safe-area-inset-top,0px); --bottom:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box}
@@ -18,8 +17,8 @@ main.wide{max-width:820px}
 @media (min-width:600px){main{padding-left:24px;padding-right:24px}}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer;touch-action:manipulation}
-h1{font:600 22px/1.2 var(--serif);margin:0}
-h2{font:600 19px/1.25 var(--serif);margin:26px 0 8px}
+h1{font-size:21px;font-weight:700;line-height:1.2;letter-spacing:-.01em;margin:0}
+h2{font-size:18px;font-weight:700;line-height:1.25;margin:26px 0 8px}
 [hidden]{display:none!important}
 
 /* Header with logo */
@@ -32,7 +31,7 @@ h2{font:600 19px/1.25 var(--serif);margin:26px 0 8px}
 /* Sign-in screens */
 .signin{max-width:360px;margin:0 auto;padding-top:24px;text-align:center}
 .signin img{height:120px;width:auto}
-.signin h1{font-size:25px;margin:14px 0 4px}
+.signin h1{font-size:24px;margin:14px 0 4px}
 .signin form{text-align:left;margin-top:14px}
 .signin .primary{width:100%;margin-top:6px}
 
