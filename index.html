@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Rewards">
+<title>Daily Rewards</title>
+<style>
+:root{--ink:#111;--mute:#6b6b6b;--line:#e8e8e8;--soft:#f4f4f4;--green:#0e7a43;--red:#b42318}
+*{box-sizing:border-box}
+body{margin:0;background:#ececec;color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:430px;margin:0 auto;background:#fff;min-height:100vh;padding:16px 20px 32px}
+button,input,select{font-family:inherit;font-size:16px}
+h1{font-size:22px;margin:0}
+h2{font-size:20px;margin:28px 0 8px}
+.head{display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px;gap:10px}
+.when{color:var(--mute);font-size:14px;margin:4px 0 8px}
+.status{font-size:13px;color:var(--mute);margin-bottom:10px;min-height:18px}
+.status.warn{color:var(--red)}
+.banner{background:var(--soft);border-radius:14px;padding:16px;line-height:1.45}
+.earned{display:flex;justify-content:space-between;margin:14px 2px;font-weight:600}
+.earned b{color:var(--green)}
+.tier{margin:24px 0}
+.row{display:flex;justify-content:space-between;align-items:center;font-size:24px;font-weight:700;margin-bottom:10px;gap:10px}
+.row em{font-style:normal;font-size:30px;margin-right:4px}
+.row span:last-child{color:var(--green);white-space:nowrap}
+.bar{height:26px;background:var(--line)}
+.bar i{display:block;height:100%;background:var(--green);transition:width .3s}
+.items{margin-top:8px;font-size:14px;color:var(--mute)}
+.items div{display:flex;justify-content:space-between;padding:3px 0}
+.items .ok{color:var(--green);font-weight:600}
+.items.big{font-size:16px}
+.add,.primary{width:100%;border:0;border-radius:10px;padding:13px;background:var(--ink);color:#fff;font-weight:600;cursor:pointer;touch-action:manipulation}
+.add{margin-top:8px}
+.add:active{transform:scale(.98)}
+.add:disabled{background:#e7f4ed;color:var(--green);cursor:default;transform:none}
+.link{border:0;background:none;text-decoration:underline;cursor:pointer;color:var(--ink);padding:6px;font-size:14px}
+.link:disabled{opacity:.35;cursor:default}
+label{display:block;margin:16px 0;font-weight:600}
+label select,label input{display:block;width:100%;margin-top:6px;padding:12px;border:1px solid #ccc;border-radius:10px;background:#fff;color:var(--ink)}
+.err{color:var(--red);min-height:20px}
+.center{text-align:center}
+#toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:12px 18px;border-radius:99px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .3s;white-space:nowrap}
+#toast.on{opacity:1}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <section id="login" hidden>
+    <h1 style="margin-top:24px">Daily Rewards</h1>
+    <p class="when">Sign in once on this phone.</p>
+    <form id="loginForm">
+      <label>Your name<select id="lname" required><option value="">Loading…</option></select></label>
+      <label>PIN<input id="lpin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" required></label>
+      <button class="primary" id="lbtn">Sign in</button>
+      <p class="err" id="lerr" role="alert"></p>
+    </form>
+  </section>
+
+  <section id="app" hidden>
+    <div class="head"><h1>Today's rewards</h1><button class="link" id="out">Sign out</button></div>
+    <div class="when"><span id="who"></span> · <span id="date"></span></div>
+    <div class="status" id="status" role="status"></div>
+    <div class="banner" id="banner"></div>
+    <div class="earned"><span>Earned today</span><b id="earned"></b></div>
+    <div id="tiers"></div>
+    <p class="center"><button class="link" id="undo">Undo</button></p>
+    <h2>Last 7 days</h2>
+    <div id="history" class="items big"></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+// Paste the web app URL from Apps Script (Deploy → Manage deployments). It ends in /exec.
+const API_URL = 'https://script.google.com/macros/s/AKfycbzvrDbh6gzwttvzte-PTJdCJmq6tXCN_9iuhi03QJdwAYwIgCdqZ6TZcaA7bsjjLb-l/exec';
+
+const KEY = 'daily-rewards-app-v1';
+const $ = id => document.getElementById(id);
+const rs = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const label = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'});
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+// user: who is signed in. server: last reply from the Sheet. queue: taps not yet saved there.
+let S = {user: null, server: null, queue: [], undo: {shift: '', stack: []}, error: ''};
+try { const s = JSON.parse(localStorage.getItem(KEY)); if (s) S = Object.assign(S, s); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+
+async function api(action, data) {
+  if (API_URL.includes('PASTE_')) throw Object.assign(new Error('This page is not connected to the Google Sheet yet.'), {server: true});
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 25000);
+  try {
+    const res = await fetch(API_URL, {method: 'POST', body: JSON.stringify(Object.assign({action}, data)), signal: ctl.signal});
+    const j = await res.json();
+    if (!j.ok) throw Object.assign(new Error(j.error || 'Server error'), {server: true});
+    return j;
+  } finally { clearTimeout(timer); }
+}
+
+const resetHour = () => (S.server ? S.server.resetHour : 4);
+function shiftOf(t) {
+  const d = new Date(t - resetHour() * 36e5);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+const targets = () => (S.server ? S.server.targets : []);
+
+// Today's count per item = what the Sheet has + taps still waiting to be sent, never more than the target.
+function counts() {
+  const shift = shiftOf(Date.now()), c = {};
+  if (S.server && S.server.shift === shift) Object.assign(c, S.server.counts);
+  S.queue.forEach(e => { if (shiftOf(e.t) === shift) c[e.item] = (c[e.item] || 0) + e.change; });
+  targets().forEach(t => { c[t.item] = Math.max(0, Math.min(c[t.item] || 0, t.qty)); });
+  return c;
+}
+const earnedNow = c => targets().reduce((a, t) => a + (t.qty > 0 && c[t.item] >= t.qty ? t.reward : 0), 0);
+function undoStack() {
+  const shift = shiftOf(Date.now());
+  if (S.undo.shift !== shift) S.undo = {shift, stack: []};
+  return S.undo.stack;
+}
+
+let syncing = false, timer = null, backoff = 0;
+
+function render() {
+  const signedIn = !!(S.user && S.user.pin);
+  $('login').hidden = signedIn; $('app').hidden = !signedIn;
+  if (!signedIn) return;
+  const c = counts(), T = targets(), max = T.reduce((a, t) => a + t.reward, 0), earned = earnedNow(c);
+  $('who').textContent = S.user.name;
+  $('date').textContent = label(shiftOf(Date.now()));
+  $('earned').textContent = rs(earned);
+  $('banner').textContent = !S.server ? 'Loading today’s targets…'
+    : earned === max ? `All targets complete. You earned ${rs(max)} today!`
+    : `Hit each item's target to earn up to ${rs(max)} today`;
+  $('tiers').innerHTML = T.map(t => {
+    const sold = c[t.item] || 0, done = sold >= t.qty;
+    return `<div class="tier">
+      <div class="row"><span><em aria-hidden="true">${esc(t.icon)}</em> ${t.qty} ${esc(t.item)}</span><span>${done ? '✓ ' : ''}${rs(t.reward)}</span></div>
+      <div class="bar"><i style="width:${t.qty ? sold / t.qty * 100 : 0}%"></i></div>
+      <div class="items"><div class="${done ? 'ok' : ''}"><span>${sold}/${t.qty} sold</span><span>${done ? 'Target reached' : (t.qty - sold) + ' to go'}</span></div></div>
+      <button class="add" data-item="${esc(t.item)}" ${done ? 'disabled' : ''}>${done ? '✓ Target reached' : '+1 ' + esc(t.item)}</button>
+    </div>`;
+  }).join('');
+  const st = undoStack(), last = st[st.length - 1];
+  $('undo').textContent = last ? `Undo last: ${last}` : 'Undo';
+  $('undo').disabled = !last;
+  $('history').innerHTML = (S.server ? S.server.history : []).map(h => `<div><span>${label(h.shift)}</span><b>${rs(h.earned)}</b></div>`).join('');
+  const n = S.queue.length, s = $('status');
+  s.className = 'status' + (S.error && n ? ' warn' : '');
+  s.textContent = syncing ? 'Saving…'
+    : n ? `${n} tap${n > 1 ? 's' : ''} not saved yet${S.error ? ' (' + S.error + ')' : ''}. Retrying…`
+    : S.server ? 'All saved ✓' : '';
+}
+
+let toastTimer;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200); }
+
+function record(item, change) {
+  const before = counts(), t = targets().find(x => x.item === item);
+  if (!t) return;
+  if (change > 0 && before[item] >= t.qty) return;   // already at target
+  if (change < 0 && !before[item]) return;           // nothing to undo
+  S.queue.push({id: uid(), item, change, t: Date.now()});
+  if (change > 0) undoStack().push(item); else undoStack().pop();
+  save(); render();
+  const gain = earnedNow(counts()) - earnedNow(before);
+  if (gain > 0) toast(`🎉 ${rs(gain)} earned!`);
+  scheduleSync(700);
+}
+
+function scheduleSync(ms) { clearTimeout(timer); timer = setTimeout(sync, ms); }
+async function sync() {
+  if (syncing || !S.user || !S.user.pin) return;
+  syncing = true; render();
+  const batch = S.queue.slice(0, 100);
+  try {
+    const res = await api(batch.length ? 'sync' : 'today', {name: S.user.name, pin: S.user.pin, events: batch});
+    const sent = new Set(batch.map(e => e.id));
+    S.queue = S.queue.filter(e => !sent.has(e.id));
+    S.server = res; S.error = ''; backoff = 0; save();
+    if (S.queue.length) scheduleSync(300);
+  } catch (e) {
+    if (e.server && /PIN|switched off/i.test(e.message)) {
+      S.user.pin = null; save();               // keep the name and unsent taps; ask for the PIN again
+      $('lerr').textContent = e.message + (S.queue.length ? ' Your unsent taps are kept.' : '');
+      loadNames();
+    } else {
+      S.error = e.server ? e.message : 'no internet';
+      backoff = Math.min(60000, (backoff || 2500) * 2);
+      scheduleSync(backoff);
+    }
+  } finally { syncing = false; render(); }
+}
+
+async function loadNames() {
+  try {
+    const r = await api('waiters', {});
+    $('lname').innerHTML = '<option value="">Choose your name</option>' + r.names.map(n => `<option>${esc(n)}</option>`).join('');
+    if (S.user) $('lname').value = S.user.name;
+  } catch (e) {
+    $('lname').innerHTML = '<option value="">Can’t load names</option>';
+    $('lerr').textContent = e.server ? e.message : 'Can’t reach the server. Check your internet and reload.';
+  }
+}
+
+$('loginForm').onsubmit = async e => {
+  e.preventDefault();
+  const name = $('lname').value, pin = $('lpin').value.trim();
+  if (!name) return;
+  $('lbtn').disabled = true; $('lerr').textContent = '';
+  try {
+    const res = await api('today', {name, pin});
+    if (S.user && S.user.name !== res.name) { S.queue = []; S.undo = {shift: '', stack: []}; }
+    S.user = {name: res.name, pin}; S.server = res; S.error = '';
+    save(); $('lpin').value = ''; render();
+    if (S.queue.length) sync();
+  } catch (err) {
+    $('lerr').textContent = err.server ? err.message : 'Can’t reach the server. Check your internet.';
+  } finally { $('lbtn').disabled = false; }
+};
+
+$('tiers').onclick = e => { const b = e.target.closest('button[data-item]'); if (b && !b.disabled) record(b.dataset.item, 1); };
+$('undo').onclick = () => { const st = undoStack(); if (st.length) record(st[st.length - 1], -1); };
+$('out').onclick = () => {
+  if (S.queue.length) { toast('Wait — taps still saving'); sync(); return; }
+  S = {user: null, server: null, queue: [], undo: {shift: '', stack: []}, error: ''};
+  save(); loadNames(); render();
+};
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); sync(); } });
+addEventListener('online', () => { backoff = 0; sync(); });
+setInterval(() => { render(); if (!S.queue.length) sync(); }, 60000);   // refresh targets and roll over at the day change
+
+render();
+if (S.user && S.user.pin) sync(); else loadNames();
+</script>
+</body>
+</html>
