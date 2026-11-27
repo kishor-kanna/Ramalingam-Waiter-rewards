@@ -1,10 +1,10 @@
 /* Ramalingam Hotel – Daily Rewards. Shared by index.html, manager.html and ops.html. */
 :root{
   --ink:#1c1f17; --mute:#666b5e; --line:#e7e4db; --soft:#f5f3ec; --bg:#eeebe2;
-  --brand:#7c963f;        /* logo green: bars, borders, focus */
-  --brand-btn:#56702a;    /* buttons (white text passes contrast) */
-  --brand-ink:#4a6224;    /* green text */
-  --brand-soft:#eef2e2;
+  --brand:#8c2341;        /* burgundy: progress bars, focus */
+  --brand-btn:#7b1e3a;    /* buttons (white text passes contrast) */
+  --brand-ink:#7b1e3a;    /* burgundy text */
+  --brand-soft:#f7ebee;
   --red:#b42318; --red-soft:#fdecea;
   --serif:Georgia,"Times New Roman",serif;
   --top:env(safe-area-inset-top,0px); --bottom:env(safe-area-inset-bottom,0px);
@@ -75,8 +75,8 @@ input[type=checkbox]{width:24px;height:24px;min-height:0;margin:0;padding:0;just
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;font-size:20px;font-weight:700}
 .row em{font-style:normal;font-size:28px;margin-right:6px;vertical-align:-3px}
 .row span:last-child{color:var(--brand-ink);white-space:nowrap}
-.bar{height:12px;background:var(--soft);border-radius:99px;overflow:hidden}
-.bar i{display:block;height:100%;background:var(--brand);border-radius:99px;transition:width .3s}
+.bar{height:26px;background:#e8e8e8}
+.bar i{display:block;height:100%;background:var(--brand);transition:width .3s}
 .items{margin-top:8px;font-size:14px;color:var(--mute)}
 .items div{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
 .items .ok{color:var(--brand-ink);font-weight:600}
