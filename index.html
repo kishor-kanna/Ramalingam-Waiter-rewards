@@ -131,10 +131,9 @@ function render() {
   $('tiers').classList.toggle('locked', !approved);
   $('banner').className = 'banner' + (!live ? '' : ck.status === 'no' ? ' bad' : ck.status === 'pending' ? ' wait' : ' good');
   $('banner').textContent = !S.server ? 'Loading today’s targets…'
-    : ck.status === 'no' && live ? `✗ Not approved today${ck.reason ? ': ' + ck.reason : ''}. Go get approved now to earn up to ${rs(max)} today.`
-    : ck.status === 'pending' && live ? `⏳ Go get approved now. Your manager checks grooming, uniform and timing. Earn up to ${rs(max)} today.`
-    : earned === max ? `${live ? '✓ Approved. ' : ''}All targets complete. You earned ${rs(max)} today!`
-    : `${live ? '✓ Approved. ' : ''}Hit each item's target to earn up to ${rs(max)} today`;
+    : !live ? (earned === max ? `All targets complete. You earned ${rs(max)} today!` : `Hit each item's target to earn up to ${rs(max)} today`)
+    : ck.status === 'ok' ? 'Approved!'
+    : 'Kindly get approved by manager to unlock today’s incentives';
   $('tiers').innerHTML = T.map(t => {
     const sold = c[t.item] || 0, done = sold >= t.qty;
     return `<div class="tier">
