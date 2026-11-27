@@ -69,6 +69,8 @@ Free GitHub Pages needs a public repo. That's fine because the pages hold no dat
 
 **On each waiter's phone:** open the waiter link → pick their branch and name → enter their PIN → **Share → Add to Home Screen** (iPhone) or **⋮ → Add to Home screen** (Android).
 
+The home-screen icon is the Ramalingam Hotel logo, and the page opens full screen like an app. It also opens without internet: taps are saved on the phone and sent when the connection comes back. The manager page and the ops portal can be added to the home screen the same way. Each gets its own icon and opens straight to its own page.
+
 ## 5. Daily backup to GitHub (recommended)
 
 Use a **separate, private** repository for the data. Payouts should not be public.

@@ -2,68 +2,37 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Rewards">
-<title>Daily Rewards</title>
-<style>
-:root{--ink:#111;--mute:#6b6b6b;--line:#e8e8e8;--soft:#f4f4f4;--green:#0e7a43;--red:#b42318}
-*{box-sizing:border-box}
-body{margin:0;background:#ececec;color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{max-width:430px;margin:0 auto;background:#fff;min-height:100vh;padding:16px 20px 32px}
-button,input,select{font-family:inherit;font-size:16px}
-h1{font-size:22px;margin:0}
-h2{font-size:20px;margin:28px 0 8px}
-.head{display:flex;justify-content:space-between;align-items:center;margin:8px 0 4px;gap:10px}
-.when{color:var(--mute);font-size:14px;margin:4px 0 8px}
-.status{font-size:13px;color:var(--mute);margin-bottom:10px;min-height:18px}
-.status.warn{color:var(--red)}
-.banner{background:var(--soft);border-radius:14px;padding:16px;line-height:1.45}
-.earned{display:flex;justify-content:space-between;margin:14px 2px;font-weight:600}
-.earned b{color:var(--green)}
-.tier{margin:24px 0}
-.row{display:flex;justify-content:space-between;align-items:center;font-size:24px;font-weight:700;margin-bottom:10px;gap:10px}
-.row em{font-style:normal;font-size:30px;margin-right:4px}
-.row span:last-child{color:var(--green);white-space:nowrap}
-.bar{height:26px;background:var(--line)}
-.bar i{display:block;height:100%;background:var(--green);transition:width .3s}
-.items{margin-top:8px;font-size:14px;color:var(--mute)}
-.items div{display:flex;justify-content:space-between;padding:3px 0}
-.items .ok{color:var(--green);font-weight:600}
-.items.big{font-size:16px}
-.add,.primary{width:100%;border:0;border-radius:10px;padding:13px;background:var(--ink);color:#fff;font-weight:600;cursor:pointer;touch-action:manipulation}
-.add{margin-top:8px}
-.add:active{transform:scale(.98)}
-.add:disabled{background:#e7f4ed;color:var(--green);cursor:default;transform:none}
-.link{border:0;background:none;text-decoration:underline;cursor:pointer;color:var(--ink);padding:6px;font-size:14px}
-.link:disabled{opacity:.35;cursor:default}
-label{display:block;margin:16px 0;font-weight:600}
-label select,label input{display:block;width:100%;margin-top:6px;padding:12px;border:1px solid #ccc;border-radius:10px;background:#fff;color:var(--ink)}
-.err{color:var(--red);min-height:20px}
-.center{text-align:center}
-#toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;padding:12px 18px;border-radius:99px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .3s;white-space:nowrap}
-#toast.on{opacity:1}
-[hidden]{display:none!important}
-</style>
+<meta name="robots" content="noindex">
+<title>Daily Rewards · Ramalingam Hotel</title>
+<link rel="manifest" href="manifest-waiter.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <main>
-  <section id="login" hidden>
-    <h1 style="margin-top:24px">Daily Rewards</h1>
-    <p class="when">Sign in once on this phone.</p>
+  <section id="login" class="signin" hidden>
+    <img src="img/logo.png" alt="Ramalingam Hotel" width="94" height="120">
+    <h1>Daily Rewards</h1>
+    <p class="note">Sign in once on this phone.</p>
     <form id="loginForm">
       <label>Branch<select id="lbranch" required><option value="">Loading…</option></select></label>
       <label>Your name<select id="lname" required><option value="">Choose a branch first</option></select></label>
-      <label>PIN<input id="lpin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" required></label>
+      <label>PIN<input id="lpin" placeholder="Your PIN" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="off" required></label>
       <button class="primary" id="lbtn">Sign in</button>
       <p class="err" id="lerr" role="alert"></p>
     </form>
   </section>
 
   <section id="app" hidden>
-    <div class="head"><h1>Today's rewards</h1><button class="link" id="out">Sign out</button></div>
-    <div class="when"><span id="who"></span> · <span id="where"></span> · <span id="date"></span></div>
+    <header class="top"><img src="img/logo.png" alt="Ramalingam Hotel" width="38" height="48"><div class="t"><div class="k" id="where"></div><h1>Today's rewards</h1></div><button class="link" id="out">Sign out</button></header>
+    <div class="when"><span id="who"></span> · <span id="date"></span></div>
     <div class="status" id="status" role="status"></div>
     <div class="banner" id="banner"></div>
     <div class="earned"><span>Earned today</span><b id="earned"></b></div>
@@ -256,6 +225,7 @@ setInterval(() => { render(); if (!S.queue.length) sync(); }, 60000);   // refre
 
 render();
 if (S.user && S.user.pin) sync(); else loadBranches();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>
