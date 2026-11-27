@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-ops.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 <main class="wide">
@@ -37,6 +37,7 @@
       <button data-tab="settings" aria-pressed="false">Settings</button>
     </nav>
     <div id="pinWarn" class="alert" hidden></div>
+    <div id="tgtWarn" class="tgtwarn" hidden></div>
 
     <div id="tab-overview">
       <div class="when" id="ovWhen"></div>
@@ -51,15 +52,20 @@
 
     <div id="tab-targets" hidden>
       <div class="dates"><label>Branch<select id="tBranch"></select></label></div>
+      <div id="tStatus" class="tstatus"></div>
       <form id="targetForm">
         <div class="erow t lab"><span>Icon</span><span>Item</span><span>Target</span><span>Reward ₹</span><span></span></div>
         <div id="tlist"></div>
         <button type="button" class="link" id="addT">+ Add item</button>
-        <div class="actions">
+        <div class="actions" id="tActions">
           <button class="primary" name="one">Save for this branch</button>
-          <button class="ghost" type="button" id="saveAll">Save for all branches</button>
+          <button class="ghost" type="button" id="confirmOne">Confirm unchanged</button>
         </div>
       </form>
+      <div class="actions" id="allActions">
+        <button class="ghost" type="button" id="saveAll">Save these for all pending branches</button>
+        <button class="primary" type="button" id="confirmAll">Confirm all branches</button>
+      </div>
     </div>
 
     <div id="tab-branches" hidden>
@@ -141,7 +147,7 @@ async function run(btn, fn) {
 }
 const branchOptions = (sel, withAll) => {
   const keep = sel.value;
-  sel.innerHTML = (withAll ? '<option value="">All branches</option>' : '') + O.branches.map(b => `<option value="${esc(b.name)}">${esc(b.name)}${b.active ? '' : ' (closed)'}</option>`).join('');
+  sel.innerHTML = (withAll ? '<option value="">All branches</option>' : '') + O.branches.map(b => `<option value="${esc(b.name)}">${esc(b.name)}${!b.active ? ' (closed)' : withAll ? '' : b.setToday ? ' ✓' : ' – not set'}</option>`).join('');
   if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
 };
 
@@ -156,7 +162,20 @@ function renderAll() {
   $('pinWarn').hidden = !clash.length;
   $('pinWarn').textContent = clash.length ? `${clash.map(b => b.name).join(', ')} uses the same PIN as this operations portal, so that manager can also sign in here. Change the branch PIN in the Branches tab, or change the operations PIN in Settings.` : '';
   branchOptions($('tBranch')); branchOptions($('pBranch'), true);
-  renderOverview(); renderTargets(); renderBranches(); renderSettings(); show();
+  renderTargetWarning(); renderOverview(); renderTargets(); renderBranches(); renderSettings(); show();
+}
+
+/* Daily targets: every open branch must be saved or confirmed each day, by the deadline */
+const pendingBranches = () => O.branches.filter(b => b.active && !b.setToday);
+function renderTargetWarning() {
+  const p = pendingBranches(), late = O.deadlinePassed, w = $('tgtWarn');
+  document.body.classList.toggle('glow-warn', !!p.length && !late);
+  document.body.classList.toggle('glow-late', !!p.length && late);
+  w.hidden = !p.length;
+  w.className = 'tgtwarn' + (late ? ' late' : '');
+  w.innerHTML = !p.length ? '' : late
+    ? `⚠ ${O.deadline} has passed and today’s targets are not set for <b>${p.map(b => esc(b.name)).join(', ')}</b>. Yesterday’s targets are running. <button class="link" data-go="targets">Set now</button>`
+    : `⏳ Set or confirm today’s targets for <b>${p.map(b => esc(b.name)).join(', ')}</b> by ${O.deadline}. <button class="link" data-go="targets">Set now</button>`;
 }
 
 /* Overview */
@@ -164,9 +183,9 @@ function renderOverview() {
   const B = O.branches.filter(b => b.active), total = B.reduce((a, b) => a + b.earned, 0);
   $('ovWhen').textContent = label(O.shift) + ' · updated ' + new Date().toLocaleTimeString('en-IN', {hour: 'numeric', minute: '2-digit'});
   $('ovSum').innerHTML = `<b>${rs(total)}</b> earned today across ${B.length} branch${B.length === 1 ? '' : 'es'}`+` · ${plural(B.reduce((a, b) => a + b.hit, 0), 'waiter')} hit a target`;
-  $('ovTable').innerHTML = `<thead><tr><th>Branch</th><th>Waiters</th><th>Checked</th><th>Hit target</th><th>Earned</th></tr></thead><tbody>` +
-    B.map(b => `<tr class="click ${b.name === boardBranch ? 'sel' : ''}" data-branch="${esc(b.name)}"><td>${esc(b.name)}</td><td>${b.waiters}</td><td class="${b.checked < b.waiters && !(O.checksFrom && O.shift < O.checksFrom) ? 'warnc' : ''}">${O.checksFrom && O.shift < O.checksFrom ? '–' : (b.checked || 0) + '/' + b.waiters}</td><td>${b.hit}</td><td class="money">${rs(b.earned)}</td></tr>`).join('') +
-    `</tbody><tfoot><tr><td>Total</td><td>${B.reduce((a, b) => a + b.waiters, 0)}</td><td>${O.checksFrom && O.shift < O.checksFrom ? '–' : B.reduce((a, b) => a + (b.checked || 0), 0) + '/' + B.reduce((a, b) => a + b.waiters, 0)}</td><td>${B.reduce((a, b) => a + b.hit, 0)}</td><td class="money">${rs(total)}</td></tr></tfoot>`;
+  $('ovTable').innerHTML = `<thead><tr><th>Branch</th><th>Targets</th><th>Checked</th><th>Hit target</th><th>Earned</th></tr></thead><tbody>` +
+    B.map(b => `<tr class="click ${b.name === boardBranch ? 'sel' : ''}" data-branch="${esc(b.name)}"><td>${esc(b.name)}</td><td class="${b.setToday ? 'tset' : O.deadlinePassed ? 'late' : 'warnc'}">${b.setToday ? '✓ ' + esc(b.setToday.time) : '⏳ Not set'}</td><td class="${b.checked < b.waiters && !(O.checksFrom && O.shift < O.checksFrom) ? 'warnc' : ''}">${O.checksFrom && O.shift < O.checksFrom ? '–' : (b.checked || 0) + '/' + b.waiters}</td><td>${b.hit}</td><td class="money">${rs(b.earned)}</td></tr>`).join('') +
+    `</tbody><tfoot><tr><td>Total</td><td>${B.filter(b => b.setToday).length}/${B.length} set</td><td>${O.checksFrom && O.shift < O.checksFrom ? '–' : B.reduce((a, b) => a + (b.checked || 0), 0) + '/' + B.reduce((a, b) => a + b.waiters, 0)}</td><td>${B.reduce((a, b) => a + b.hit, 0)}</td><td class="money">${rs(total)}</td></tr></tfoot>`;
 }
 async function loadBoard(name) {
   boardBranch = name; renderOverview();
@@ -183,14 +202,27 @@ async function loadBoard(name) {
     : '<tbody><tr><td>No waiters in this branch yet</td></tr></tbody>';
 }
 async function refresh(btn) {
-  await run(btn, async () => { O = await api('o_state', {}); renderOverview(); renderSettings(); if (boardBranch) await loadBoard(boardBranch); });
+  await run(btn, async () => { O = await api('o_state', {}); renderTargetWarning(); renderOverview(); renderSettings(); if (boardBranch) await loadBoard(boardBranch); });
 }
 
 /* Targets */
 function renderTargets() {
   const b = O.branches.find(x => x.name === $('tBranch').value) || O.branches[0];
   $('tlist').innerHTML = '';
-  if (b) b.targets.forEach(addTarget);
+  if (!b) return;
+  b.targets.forEach(addTarget);
+  const locked = !!b.setToday;
+  const st = $('tStatus');
+  st.className = 'tstatus ' + (locked ? 'ok' : O.deadlinePassed ? 'late' : 'warn');
+  st.textContent = locked
+    ? `✓ ${b.name}: ${b.setToday.action === 'confirmed' ? 'confirmed' : 'set'} for today at ${b.setToday.time}. Locked until tomorrow.`
+    : `${b.name}: not set for today yet. Save changes, or confirm if they stay the same.${O.deadlinePassed ? ' Yesterday’s targets are running.' : ''}`;
+  $('targetForm').querySelectorAll('input,button').forEach(x => x.disabled = locked);
+  $('tActions').hidden = locked; $('addT').hidden = locked;
+  const pend = pendingBranches().length;
+  $('allActions').hidden = !pend;
+  $('confirmAll').textContent = `Confirm all ${pend} pending branch${pend === 1 ? '' : 'es'}`;
+  $('saveAll').textContent = `Save these for all ${pend} pending branch${pend === 1 ? '' : 'es'}`;
 }
 function addTarget(t) {
   const d = document.createElement('div'); d.className = 'erow t';
@@ -205,14 +237,20 @@ function addTarget(t) {
 }
 const readTargets = () => [...$('tlist').children].map(d => { const i = d.querySelectorAll('input'); return {icon: i[0].value, item: i[1].value, qty: +i[2].value, reward: +i[3].value}; });
 let confirmAll = 0;
+// Tap-twice for anything that changes more than the branch on screen, since a branch is locked once set
+let again = {};
+function twice(key, msg) { if (Date.now() - (again[key] || 0) > 4000) { again[key] = Date.now(); toast(msg); return false; } again = {}; return true; }
 async function saveTargets(btn, all) {
   if (!$('targetForm').reportValidity()) return;
-  if (all && Date.now() - confirmAll > 4000) { confirmAll = Date.now(); toast(`Tap again to replace targets in all ${O.branches.length} branches`); return; }
-  confirmAll = 0;
-  await run(btn, async () => {
-    O = await api('o_targets', {branch: $('tBranch').value, all, targets: readTargets()});
-    renderAll(); toast(all ? 'Targets saved for all branches' : 'Targets saved for ' + $('tBranch').value);
-  });
+  const n = pendingBranches().length, b = $('tBranch').value;
+  if (all && !twice('saveAll', `Tap again to use these targets for all ${n} pending branches. They lock until tomorrow.`)) return;
+  if (!all && !twice('saveOne', `Tap again to save ${b}. It locks until tomorrow.`)) return;
+  await run(btn, async () => { O = await api('o_targets', {branch: b, all, targets: readTargets()}); renderAll(); toast(O.message || 'Saved'); });
+}
+async function confirmTargets(btn, all) {
+  const n = pendingBranches().length, b = $('tBranch').value;
+  if (all && !twice('confirmAll', `Tap again to confirm today’s targets for all ${n} pending branches as they are`)) return;
+  await run(btn, async () => { O = await api('o_confirm', {branch: b, all}); renderAll(); toast(O.message || 'Confirmed'); });
 }
 
 /* Branches */
@@ -302,6 +340,9 @@ $('tBranch').onchange = renderTargets;
 $('addT').onclick = () => addTarget({icon: '🍽️', item: '', qty: 10, reward: 100}).children[1].focus();
 $('targetForm').onsubmit = e => { e.preventDefault(); saveTargets(e.submitter, false); };
 $('saveAll').onclick = e => saveTargets(e.target, true);
+$('confirmOne').onclick = e => confirmTargets(e.target, false);
+$('confirmAll').onclick = e => confirmTargets(e.target, true);
+$('tgtWarn').onclick = e => { if (e.target.dataset.go) { tab = 'targets'; const p = pendingBranches()[0]; if (p) $('tBranch').value = p.name; renderTargets(); show(); } };
 $('addB').onclick = () => addBranch({name: '', pin: String(1000 + Math.floor(Math.random() * 9000)), active: true}, false).children[0].focus();
 $('branchForm').onsubmit = e => {
   e.preventDefault();

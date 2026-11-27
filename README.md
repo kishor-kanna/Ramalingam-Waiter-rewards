@@ -121,6 +121,12 @@ The token is stored only in the script's settings. It never appears in the web p
 - **A waiter nobody checks that day is not paid** for it. The ops overview shows how many waiters each branch has checked.
 - Payouts, the month view and the GitHub backup only include approved days. The backup has a `check` column (`ok`, `no:Late`, `none`).
 
+**Daily targets.** Every morning, operations must **save** or **confirm** each open branch's targets by **10:30 AM** (change `TARGET_DEADLINE` in `Code.gs`).
+- Until every branch is done, the ops portal glows yellow with a list of pending branches. After 10:30 it turns red.
+- **Confirm unchanged** keeps a branch's targets as they are. **Confirm all branches** does that for every pending branch. Branches can have different targets.
+- Once a branch is saved or confirmed, it's locked until the next day.
+- A branch nobody sets keeps running on yesterday's targets. Its manager sees "Today's targets are not set yet. Please call the person in charge today to set the targets."
+
 **The branch manager page** (`manager.html`) shows only that branch:
 - **Check-in** – the daily grooming check (opens first).
 - **Today** – every waiter's live counts, check status and earnings, refreshed every 30 seconds.

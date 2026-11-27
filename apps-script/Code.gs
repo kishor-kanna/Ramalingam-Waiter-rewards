@@ -9,7 +9,8 @@
  *   Operations manager  – ops PIN. Targets for every branch, branches, all payouts, backup.
  */
 const RESET_HOUR = 4;      // a new working day starts at 4 AM, so late-night sales stay on the same shift
-const KEEP_RAW_DAYS = 3;   // tap-by-tap rows are kept this long; daily totals stay forever in "Daily"
+const KEEP_RAW_DAYS = 3;
+const TARGET_DEADLINE = '10:30'; // operations must set or confirm every branch's targets by this time (24h, restaurant time)   // tap-by-tap rows are kept this long; daily totals stay forever in "Daily"
 const SCHEMA = '3';
 // The three things a manager checks. A waiter is approved only when all three are ticked.
 const CHECKS = [
@@ -26,9 +27,10 @@ const HEAD = {
   Sales:    ['time', 'shift', 'waiter', 'item', 'change', 'id', 'branch'],
   Daily:    ['shift', 'waiter', 'item', 'sold', 'target', 'reward', 'earned', 'branch', 'check'],
   Checks:   ['shift', 'branch', 'waiter', 'status', 'reason', 'by', 'time'],
+  TargetLog: ['shift', 'branch', 'time', 'by', 'action'],
   Settings: ['key', 'value']
 };
-const TEXT_COLS = { Branches: [2], Waiters: [2], Sales: [2], Daily: [1], Checks: [1], Settings: [2] };
+const TEXT_COLS = { Branches: [2], Waiters: [2], Sales: [2], Daily: [1], Checks: [1], TargetLog: [1], Settings: [2] };
 const DEFAULT_TARGETS = [['Soup', '🍲', 10, 100], ['Biryani', '🍛', 10, 200], ['Starter', '🍢', 10, 150], ['Beverage', '🥤', 10, 100]];
 
 const ACTIONS = {
@@ -48,6 +50,7 @@ const ACTIONS = {
   // operations manager
   o_state: opsState,
   o_targets: saveTargets,
+  o_confirm: confirmTargets,
   o_branches: saveBranches,
   o_payouts: opsPayouts,
   o_pin: changeOpsPin,
@@ -410,6 +413,7 @@ function managerState(r) {
   var b = branchManager(r), ctx = context(b.name), shift = shiftOf(new Date()), waiters = waitersOf(b.name), checks = {};
   waiters.forEach(function (w) { checks[w.name] = checkFor(ctx, shift, w.name); });
   return { ok: true, branch: b.name, asOps: isOps(r), shift: shift, resetHour: RESET_HOUR, criteria: CHECKS, checksFrom: ctx.checksFrom,
+    targetsSet: !!targetStatus(shift)[norm(b.name)], deadline: deadlineLabel(), deadlinePassed: deadlinePassed(),
     targets: ctx.targets, waiters: waiters, checks: checks, today: liveRows(ctx, shift) };
 }
 
@@ -468,6 +472,30 @@ function changeBranchPin(r) {
   return { ok: true };
 }
 
+/* ---------- daily targets: set or confirmed once per day, by the deadline ---------- */
+
+/** branch (lower case) -> {time, by, action} for branches whose targets were set or confirmed this shift */
+function targetStatus(shift) {
+  var m = {};
+  rows('TargetLog').forEach(function (r) {
+    if (day(r[0]) === shift) m[norm(r[1])] = { time: r[2] ? Utilities.formatDate(new Date(r[2]), tz(), 'h:mm a') : '', by: String(r[3]), action: String(r[4]) };
+  });
+  return m;
+}
+/** True once the deadline has passed for the current working day (also after midnight, before the 4 AM change). */
+function deadlinePassed() {
+  var now = new Date(), shift = shiftOf(now);
+  return Utilities.formatDate(now, tz(), 'yyyy-MM-dd') > shift || Utilities.formatDate(now, tz(), 'HH:mm') >= TARGET_DEADLINE;
+}
+function deadlineLabel() {
+  var p = TARGET_DEADLINE.split(':'), h = Number(p[0]);
+  return (h % 12 || 12) + ':' + p[1] + (h < 12 ? ' AM' : ' PM');
+}
+function logTargets(names, r, action) {
+  var shift = shiftOf(new Date()), now = new Date();
+  appendRows('TargetLog', names.map(function (n) { return [shift, n, now, isOps(r) ? 'Operations' : 'Manager', action]; }));
+}
+
 /* ---------- operations manager ---------- */
 
 function opsState(r) {
@@ -488,7 +516,10 @@ function opsState(r) {
       earned: today.reduce(function (a, x) { return a + x.earned; }, 0)
     };
   });
+  var set = targetStatus(shift);
+  list.forEach(function (b) { b.setToday = set[norm(b.name)] || null; });
   return { ok: true, shift: shift, resetHour: RESET_HOUR, branches: list, checksFrom: p.checks_from || '', lastBackup: p.last_backup || '',
+    deadline: deadlineLabel(), deadlinePassed: deadlinePassed(),
     github: !!PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN') };
 }
 
@@ -502,18 +533,41 @@ function cleanTargets(list) {
   return t;
 }
 
-/** Sets one branch's targets, or every branch's when r.all is true. */
+/** Sets one branch's targets, or every branch not yet set today when r.all is true. Once set, a branch is locked until tomorrow. */
 function saveTargets(r) {
   ops(r);
-  var t = cleanTargets(r.targets);
-  var names = r.all ? allBranches().map(function (b) { return b.name; }) : [branchOf(r).name];
+  var t = cleanTargets(r.targets), done = targetStatus(shiftOf(new Date()));
+  var names;
+  if (r.all) {
+    names = allBranches().filter(function (b) { return b.active && !done[norm(b.name)]; }).map(function (b) { return b.name; });
+    if (!names.length) throw new Error('Every branch is already set for today');
+  } else {
+    names = [branchOf(r).name];
+    if (done[norm(names[0])]) throw new Error('Targets for ' + names[0] + ' are already set for today. They can be changed again tomorrow.');
+  }
   var set = {}; names.forEach(function (n) { set[norm(n)] = 1; });
   withLock(function () {
     var keep = rows('Targets').filter(function (x) { return String(x[0]).trim() && !set[norm(x[4])]; });
     names.forEach(function (n) { keep = keep.concat(t.map(function (x) { return x.concat([n]); })); });
     replaceRows('Targets', keep);
+    logTargets(names, r, 'saved');
   });
-  return opsState(r);
+  var out = opsState(r); out.message = 'Targets saved for ' + names.join(', '); return out;
+}
+
+/** Confirms that a branch keeps its current targets today (r.all: every active branch not yet set). */
+function confirmTargets(r) {
+  ops(r);
+  var done = targetStatus(shiftOf(new Date())), names;
+  if (r.all) {
+    names = allBranches().filter(function (b) { return b.active && !done[norm(b.name)]; }).map(function (b) { return b.name; });
+    if (!names.length) throw new Error('Every branch is already set for today');
+  } else {
+    names = [branchOf(r).name];
+    if (done[norm(names[0])]) throw new Error(names[0] + ' is already set for today');
+  }
+  withLock(function () { logTargets(names, r, 'confirmed'); });
+  var out = opsState(r); out.message = 'Confirmed for ' + names.join(', '); return out;
 }
 
 /** Adds branches and updates PINs / on-off. Existing branches are never renamed or deleted, so their history stays linked. */

@@ -98,6 +98,21 @@ h3{font-size:15px;margin:18px 0 2px}
 .items .day span b{color:var(--ink)}
 .items b.ok{color:var(--brand-ink)}
 
+/* Daily targets warning (ops + manager) */
+.tgtwarn{border-radius:12px;padding:12px 14px;margin:0 0 12px;font-size:14px;font-weight:600;line-height:1.45;background:#fff4dd;color:#7a4f00;border:1px solid #f0d28a}
+.tgtwarn.late{background:var(--red-soft);color:var(--red);border-color:#f1b5ae}
+.tgtwarn .link{padding:0 4px;min-height:0;font-size:14px;font-weight:700;color:inherit}
+.tstatus{border-radius:12px;padding:10px 14px;margin:10px 0 12px;font-size:14px;font-weight:600}
+.tstatus.ok{background:#e8f4ec;color:#1d6b36}
+.tstatus.warn{background:#fff4dd;color:#7a4f00}
+.tstatus.late{background:var(--red-soft);color:var(--red)}
+td.late{color:var(--red);font-weight:700}
+td.tset{color:#1d6b36;font-weight:700}
+body.glow-warn::after,body.glow-late::after{content:"";position:fixed;inset:0;z-index:4;pointer-events:none}
+body.glow-warn::after{box-shadow:inset 0 0 40px 10px rgba(240,180,20,.5)}
+body.glow-late::after{box-shadow:inset 0 0 40px 10px rgba(200,30,30,.45)}
+input:disabled{background:var(--soft);color:var(--mute)}
+
 /* Tap feedback */
 .add.pop{animation:pop .28s ease-out}
 @keyframes pop{0%{transform:scale(1)}35%{transform:scale(.94)}70%{transform:scale(1.03)}100%{transform:scale(1)}}

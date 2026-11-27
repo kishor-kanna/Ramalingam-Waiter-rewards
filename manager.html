@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-manager.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 <main class="wide">
@@ -30,6 +30,7 @@
 
   <section id="app" hidden>
     <header class="top"><img src="img/logo.png" alt="Ramalingam Hotel" width="38" height="48"><div class="t"><div class="k">Branch manager</div><h1 id="title">Rewards</h1></div><button class="link" id="out">Sign out</button></header>
+    <div id="tgtWarn" class="tgtwarn" hidden></div>
     <nav id="tabs">
       <button data-tab="checkin" aria-pressed="true">Check-in</button>
       <button data-tab="today" aria-pressed="false">Today</button>
@@ -127,7 +128,13 @@ function show() {
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === tab));
   ['checkin', 'today', 'payouts', 'waiters', 'settings'].forEach(t => $('tab-' + t).hidden = t !== tab);
 }
-function renderAll() { $('title').textContent = M.branch + (M.asOps ? ' · ops view' : ''); renderCheckin(); renderToday(); renderWaiters(); show(); }
+function renderAll() { $('title').textContent = M.branch + (M.asOps ? ' · ops view' : ''); renderTargetWarning(); renderCheckin(); renderToday(); renderWaiters(); show(); }
+function renderTargetWarning() {
+  const w = $('tgtWarn'), off = M.targetsSet !== false;   // older Sheet script sends nothing: no warning
+  w.hidden = off;
+  w.className = 'tgtwarn' + (M.deadlinePassed ? ' late' : '');
+  w.textContent = off ? '' : `${M.deadlinePassed ? '⚠' : '⏳'} Today’s targets are not set yet. Please call the person in charge today to set the targets.`;
+}
 
 /* Check-in: the daily grooming check. Three ticks per waiter; approved only when all three are on. */
 const CRIT = [{key: 'groomed', label: 'Groomed', icon: '💇'}, {key: 'uniform', label: 'Uniform', icon: '👔'}, {key: 'ontime', label: 'On time', icon: '⏰'}];
@@ -214,7 +221,7 @@ function renderToday() {
     `</tbody><tfoot><tr><td>Total</td><td></td>${T.map(t => `<td>${names.reduce((a, n) => a + (by[n].c[t.item] || 0), 0)}</td>`).join('')}<td class="money">${rs(total)}</td></tr></tfoot>`;
 }
 async function refreshToday(btn) {
-  await run(btn, async () => { M = await api('m_state', {}); renderToday(); renderCheckin(); });
+  await run(btn, async () => { M = await api('m_state', {}); renderTargetWarning(); renderToday(); renderCheckin(); });
 }
 
 /* Payouts */
