@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-waiter.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 <main>
@@ -31,7 +31,7 @@
   </section>
 
   <section id="app" hidden>
-    <header class="top"><img src="img/logo.png" alt="Ramalingam Hotel" width="38" height="48"><div class="t"><div class="k" id="where"></div><h1>Today's rewards</h1></div><button class="link" id="out">Sign out</button></header>
+    <header class="top"><img src="img/logo.png" alt="Ramalingam Hotel" width="38" height="48"><div class="t"><div class="k" id="where"></div><h1>Today's rewards</h1></div><button class="sound" id="sound" aria-label="Sound on" aria-pressed="true">🔊</button><button class="link" id="out">Sign out</button></header>
     <div class="when"><span id="who"></span> · <span id="date"></span></div>
     <div class="status" id="status" role="status"></div>
     <div class="banner" id="banner"></div>
@@ -136,10 +136,10 @@ function render() {
     : 'Kindly get approved by manager to unlock today’s incentives';
   $('tiers').innerHTML = T.map(t => {
     const sold = c[t.item] || 0, done = sold >= t.qty;
-    return `<div class="tier">
+    return `<div class="tier" data-tier="${esc(t.item)}">
       <div class="row"><span><em aria-hidden="true">${esc(t.icon)}</em> ${t.qty} ${esc(t.item)}</span><span>${done ? '✓ ' : ''}${rs(t.reward)}</span></div>
       <div class="bar"><i style="width:${t.qty ? sold / t.qty * 100 : 0}%"></i></div>
-      <div class="items"><div class="${done ? 'ok' : ''}"><span>${sold}/${t.qty} sold</span><span>${done ? 'Target reached' : (t.qty - sold) + ' to go'}</span></div></div>
+      <div class="items"><div class="${done ? 'ok' : ''}"><span class="cnt">${sold}/${t.qty} sold</span><span>${done ? 'Target reached' : (t.qty - sold) + ' to go'}</span></div></div>
       <button class="add" data-item="${esc(t.item)}" ${done ? 'disabled' : ''}>${done ? '✓ Target reached' : '+1 ' + esc(t.item)}</button>
     </div>`;
   }).join('');
@@ -217,6 +217,61 @@ function renderMonth() {
 $('mprev').onclick = () => { viewMonth = shiftMonth(viewMonth, -1); renderMonth(); loadMonth(); };
 $('mnext').onclick = () => { viewMonth = shiftMonth(viewMonth, 1); renderMonth(); loadMonth(); };
 
+/* Tap feedback: bounce, floating +1, sliding bar, rising tone; confetti and a chime at the target. */
+const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let audio;
+function tone(freq, at, dur, type, vol) {
+  const t0 = audio.currentTime + at, o = audio.createOscillator(), g = audio.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function sound(progress, win) {
+  if (S.sound === false) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === 'suspended') audio.resume();
+    const scale = [523.3, 587.3, 659.3, 698.5, 784, 880, 987.8, 1046.5];   // C major, climbing towards the target
+    if (win) {
+      [523.3, 659.3, 784, 1046.5].forEach((f, i) => tone(f, i * 0.08, 0.32, 'triangle', 0.22));
+      tone(1568, 0.34, 0.6, 'sine', 0.12);
+    } else {
+      const f = scale[Math.min(7, Math.floor(progress * 8))];
+      tone(f, 0, 0.13, 'triangle', 0.22); tone(f * 2, 0, 0.07, 'sine', 0.06);
+    }
+  } catch (e) {}
+}
+function celebrate(item, was, qty, win) {
+  const tier = document.querySelector(`[data-tier="${CSS.escape(item)}"]`); if (!tier) return;
+  const btn = tier.querySelector('.add'), fill = tier.querySelector('.bar i'), now = Math.min(was + 1, qty);
+  sound(now / qty, win);
+  if (navigator.vibrate) navigator.vibrate(win ? [30, 50, 80] : 12);
+  // slide the bar from where it was
+  fill.style.transition = 'none'; fill.style.width = (was / qty * 100) + '%'; fill.offsetWidth;
+  fill.style.transition = ''; fill.style.width = (now / qty * 100) + '%';
+  if (calm) return;
+  tier.querySelector('.cnt').classList.add('bump');
+  btn.classList.add('pop');
+  const r = btn.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const f = document.createElement('div');
+  f.className = 'floater'; f.textContent = '+1'; f.style.left = cx + 'px'; f.style.top = cy + 'px';
+  document.body.append(f); setTimeout(() => f.remove(), 800);
+  if (!win) return;
+  tier.classList.add('won');
+  const colours = ['#8c2341', '#d4a017', '#7c963f', '#e8618c', '#1d6b36'];
+  for (let i = 0; i < 28; i++) {
+    const c = document.createElement('i'), a = Math.random() * Math.PI * 2, d = 70 + Math.random() * 110;
+    c.className = 'confetti';
+    c.style.cssText = `left:${cx}px;top:${cy}px;background:${colours[i % colours.length]};--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d - 60}px;--r:${Math.random() * 720 - 360}deg`;
+    document.body.append(c); setTimeout(() => c.remove(), 1100);
+  }
+}
+function soundButton() { const b = $('sound'); b.textContent = S.sound === false ? '🔇' : '🔊'; b.setAttribute('aria-pressed', S.sound !== false); b.setAttribute('aria-label', S.sound === false ? 'Sound off' : 'Sound on'); }
+$('sound').onclick = () => { S.sound = S.sound === false; save(); soundButton(); if (S.sound) sound(1, false); };
+soundButton();
+
 let toastTimer;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200); }
 
@@ -229,6 +284,7 @@ function record(item, change) {
   if (change > 0) undoStack().push(item); else undoStack().pop();
   save(); render();
   const gain = earnedNow(counts()) - earnedNow(before), st = checkNow().status;
+  if (change > 0) celebrate(item, before[item] || 0, t.qty, gain > 0);
   if (gain > 0) toast(st === 'ok' ? `🎉 ${rs(gain)} earned!` : st === 'no' ? 'Target reached' : `🎉 Target reached! ${rs(gain)} once approved`);
   scheduleSync(700);
 }
