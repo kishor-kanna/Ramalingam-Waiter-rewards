@@ -166,7 +166,7 @@ function renderAll() {
 }
 
 /* Daily targets: every open branch must be saved or confirmed each day, by the deadline */
-const pendingBranches = () => O.branches.filter(b => b.active && !b.setToday);
+const pendingBranches = () => O.deadline === undefined ? [] : O.branches.filter(b => b.active && !b.setToday);   // older Sheet script: no daily targets yet
 function renderTargetWarning() {
   const p = pendingBranches(), late = O.deadlinePassed, w = $('tgtWarn');
   document.body.classList.toggle('glow-warn', !!p.length && !late);
@@ -212,6 +212,8 @@ function renderTargets() {
   if (!b) return;
   b.targets.forEach(addTarget);
   const locked = !!b.setToday;
+  if (O.deadline === undefined) { $('tStatus').className = 'tstatus'; $('tStatus').textContent = ''; $('allActions').hidden = true; $('confirmOne').hidden = true; return; }
+  $('confirmOne').hidden = false;
   const st = $('tStatus');
   st.className = 'tstatus ' + (locked ? 'ok' : O.deadlinePassed ? 'late' : 'warn');
   st.textContent = locked
