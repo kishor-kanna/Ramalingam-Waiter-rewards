@@ -263,14 +263,16 @@ function loader() {
 }
 /** Today's grooming check for one waiter: ok, no (with reason), or pending. Past days without a check are "none". */
 function checkFor(ctx, shift, name) {
-  var c = ctx.checks[shift + '|' + name];
+  var c = ctx.checks[shift + '|' + name], isToday = shift === shiftOf(new Date());
+  // "pending" is saved by Undo: the waiter waits for a fresh check (and is not paid if it never comes)
+  if (c && c.status === 'pending') return { status: isToday ? 'pending' : 'none', reason: '', flags: {} };
   if (c) {
     var flags = {};
     CHECKS.forEach(function (k) { flags[k.key] = c.status === 'ok' || c.reason.indexOf(k.missing) < 0; });
     return { status: c.status, reason: c.reason, flags: flags, by: c.by, time: c.time ? Utilities.formatDate(new Date(c.time), tz(), 'h:mm a') : '' };
   }
   if (ctx.checksFrom && shift < ctx.checksFrom) return { status: 'ok', reason: '', before: true };   // before checks started
-  return { status: shift === shiftOf(new Date()) ? 'pending' : 'none', reason: '' };
+  return { status: isToday ? 'pending' : 'none', reason: '' };
 }
 function context(branch) { return loader()(branch); }
 
@@ -423,12 +425,12 @@ function saveCheck(r) {
     reason = missing.join(', ');
   } else if (st === 'no') reason = String(r.reason || 'Other').trim().slice(0, 40);
   if (['ok', 'no', 'clear'].indexOf(st) < 0) throw new Error('Unknown check');
-  var row = [shift, b.name, w.name, st, reason, isOps(r) ? 'Operations' : 'Branch manager', new Date()];
+  // Undo keeps a "pending" row rather than deleting it, so an undone waiter is locked until checked again
+  var row = [shift, b.name, w.name, st === 'clear' ? 'pending' : st, reason, isOps(r) ? 'Operations' : 'Branch manager', new Date()];
   withLock(function () {
     var all = rows('Checks'), idx = -1;
     all.forEach(function (x, i) { if (day(x[0]) === shift && norm(x[1]) === norm(b.name) && norm(x[2]) === norm(w.name)) idx = i; });
-    if (st === 'clear') { if (idx >= 0) deleteRows(sheet('Checks'), idx + 2, 1); }
-    else if (idx >= 0) sheet('Checks').getRange(idx + 2, 1, 1, row.length).setValues([row]);
+    if (idx >= 0) sheet('Checks').getRange(idx + 2, 1, 1, row.length).setValues([row]);
     else appendRows('Checks', [row]);
   });
   return managerState(r);
