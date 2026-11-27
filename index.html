@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-waiter.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <main>
@@ -34,7 +34,6 @@
     <header class="top"><img src="img/logo.png" alt="Ramalingam Hotel" width="38" height="48"><div class="t"><div class="k" id="where"></div><h1>Today's rewards</h1></div><button class="link" id="out">Sign out</button></header>
     <div class="when"><span id="who"></span> · <span id="date"></span></div>
     <div class="status" id="status" role="status"></div>
-    <div class="check" id="check" hidden></div>
     <div class="banner" id="banner"></div>
     <div class="earned"><span>Earned today</span><b id="earned"></b></div>
     <div id="tiers"></div>
@@ -126,20 +125,16 @@ function render() {
   $('earned').innerHTML = ck.status === 'ok' ? rs(earned)
     : ck.status === 'no' ? `${rs(0)}${earned ? ` <small>${rs(earned)} not approved</small>` : ''}`
     : `${rs(earned)}${earned ? ' <small>pending</small>' : ''}`;
-  const box = $('check');
-  box.hidden = !S.server || ck.before;
-  box.className = 'check ' + ck.status;
-  box.textContent = ck.status === 'ok' ? `✓ Approved for today${ck.time ? ' at ' + ck.time : ''}`
-    : ck.status === 'no' ? `✗ Not approved today${ck.reason ? ': ' + ck.reason : ''}`
-    : '⏳ Waiting for grooming check';
-  const ckState = checkNow();
-  document.body.classList.toggle('not-approved', !!S.server && ckState.status === 'no');
-  $('banner').classList.toggle('bad', !!S.server && ckState.status === 'no');
+  // One message box: targets when approved, "go get approved" when not. Not approved = greyed items + red glow.
+  const live = !!S.server && !ck.before, approved = !live || ck.status === 'ok';
+  document.body.classList.toggle('not-approved', live && ck.status === 'no');
+  $('tiers').classList.toggle('locked', !approved);
+  $('banner').className = 'banner' + (!live ? '' : ck.status === 'no' ? ' bad' : ck.status === 'pending' ? ' wait' : ' good');
   $('banner').textContent = !S.server ? 'Loading today’s targets…'
-    : ckState.status === 'no' ? `Not approved today. Fix your grooming, uniform or timing and ask your manager to approve you, to earn up to ${rs(max)} today.`
-    : ckState.status === 'pending' ? `Get your manager’s approval for grooming, uniform and coming on time, then hit each item's target to earn up to ${rs(max)} today.`
-    : earned === max ? `All targets complete. You earned ${rs(max)} today!`
-    : `Hit each item's target to earn up to ${rs(max)} today`;
+    : ck.status === 'no' && live ? `✗ Not approved today${ck.reason ? ': ' + ck.reason : ''}. Go get approved now to earn up to ${rs(max)} today.`
+    : ck.status === 'pending' && live ? `⏳ Go get approved now. Your manager checks grooming, uniform and timing. Earn up to ${rs(max)} today.`
+    : earned === max ? `${live ? '✓ Approved. ' : ''}All targets complete. You earned ${rs(max)} today!`
+    : `${live ? '✓ Approved. ' : ''}Hit each item's target to earn up to ${rs(max)} today`;
   $('tiers').innerHTML = T.map(t => {
     const sold = c[t.item] || 0, done = sold >= t.qty;
     return `<div class="tier">

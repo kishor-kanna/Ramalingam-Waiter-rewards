@@ -1,8 +1,8 @@
 // Lets the home-screen app open without internet. Always tries the network first,
 // so updates pushed to GitHub show up on the next open; the saved copy is only a fallback.
 // Sales still go to the Google Sheet directly and are never cached.
-const CACHE = 'rewards-v8';
-const SHELL = ['./', 'index.html', 'manager.html', 'ops.html', 'style.css?v=9', 'img/logo.png'];
+const CACHE = 'rewards-v9';
+const SHELL = ['./', 'index.html', 'manager.html', 'ops.html', 'style.css?v=10', 'img/logo.png'];
 
 self.addEventListener('install', e => {
   self.skipWaiting();
