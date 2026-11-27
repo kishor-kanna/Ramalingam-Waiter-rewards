@@ -42,7 +42,6 @@
     <div id="tab-checkin">
       <div class="when" id="ckWhen"></div>
       <div class="banner" id="ckSum"></div>
-      <p class="note" id="ckNote">Tick <b>Groomed</b>, <b>Uniform</b> and <b>On time</b> for each waiter. Only waiters with all three ticked are paid today’s rewards. Leave a tick off to show why, or tap ↺ to undo. You can change it any time today.</p>
       <div id="ckList"></div>
     </div>
 
@@ -50,11 +49,10 @@
       <div class="when" id="todayWhen"></div>
       <div class="banner" id="todaySum"></div>
       <div class="scroll"><table id="todayTable"></table></div>
-      <div class="actions"><button class="ghost" id="refresh">Refresh</button><span class="note">Refreshes every 30 seconds. Targets are set by the operations manager.</span></div>
+      <div class="actions"><button class="ghost" id="refresh">Refresh</button></div>
     </div>
 
     <div id="tab-payouts" hidden>
-      <p class="note">What each waiter earned between two dates. Days are counted from 4 AM to 4 AM.</p>
       <div class="dates">
         <label>From<input type="date" id="from"></label>
         <label>To<input type="date" id="to"></label>
@@ -69,7 +67,6 @@
     </div>
 
     <div id="tab-waiters" hidden>
-      <p class="note">Waiters sign in with their name and PIN. Untick “On” for someone who has left. Their history is kept. If you change a PIN, that phone asks for the new one.</p>
       <form id="waiterForm">
         <div class="erow w lab"><span>Name</span><span>PIN</span><span class="center">On</span><span></span></div>
         <div id="wlist"></div>

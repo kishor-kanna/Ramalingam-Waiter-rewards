@@ -43,17 +43,15 @@
       <div class="when" id="ovWhen"></div>
       <div class="banner" id="ovSum"></div>
       <div class="scroll"><table id="ovTable"></table></div>
-      <p class="note">Tap a branch to see its waiters.</p>
       <div id="board" hidden>
         <h2 id="boardTitle"></h2>
         <div class="scroll"><table id="boardTable"></table></div>
       </div>
-      <div class="actions"><button class="ghost" id="refresh">Refresh</button><span class="note">Refreshes every 60 seconds.</span></div>
+      <div class="actions"><button class="ghost" id="refresh">Refresh</button></div>
     </div>
 
     <div id="tab-targets" hidden>
       <div class="dates"><label>Branch<select id="tBranch"></select></label></div>
-      <p class="note">Every waiter in the branch has the same daily target for each item. Changes reach phones within a minute and apply to today too, so change them before opening or after closing. Renaming an item starts its count from zero.</p>
       <form id="targetForm">
         <div class="erow t lab"><span>Icon</span><span>Item</span><span>Target</span><span>Reward ₹</span><span></span></div>
         <div id="tlist"></div>
@@ -66,7 +64,6 @@
     </div>
 
     <div id="tab-branches" hidden>
-      <p class="note">Each branch manager signs in with their branch and PIN. A new branch starts with the same targets as the first branch, so change them in the Targets tab. Branch names can’t be changed after saving because the sales history is linked to them. Untick “On” to close a branch.</p>
       <form id="branchForm">
         <div class="erow b lab"><span>Branch</span><span>Manager PIN</span><span class="center">On</span></div>
         <div id="blist"></div>
@@ -76,7 +73,6 @@
     </div>
 
     <div id="tab-payouts" hidden>
-      <p class="note">What each waiter earned between two dates. Days are counted from 4 AM to 4 AM.</p>
       <div class="dates">
         <label>Branch<select id="pBranch"></select></label>
         <label>From<input type="date" id="from"></label>
