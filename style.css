@@ -47,7 +47,7 @@ input[type=checkbox]{width:24px;height:24px;min-height:0;margin:0;padding:0;just
 .primary,.add{border:0;border-radius:12px;padding:12px 18px;min-height:48px;background:var(--brand-btn);color:#fff;font-weight:600}
 .primary:active,.add:active{filter:brightness(.9)}
 .primary:disabled{opacity:.55}
-.add{display:block;width:100%;margin-top:12px;background:#1a1a1a}
+.add{display:block;width:100%;margin-top:8px;background:#1a1a1a}
 .add:disabled{background:var(--brand-soft);color:var(--brand-ink);cursor:default;filter:none}
 .ghost{border:1px solid #d9d5ca;border-radius:12px;padding:11px 16px;min-height:46px;background:#fff;font-weight:600}
 .ghost:active{background:var(--soft)}
@@ -70,9 +70,9 @@ input[type=checkbox]{width:24px;height:24px;min-height:0;margin:0;padding:0;just
 .card h2{margin-top:0}
 
 /* Waiter item cards */
-.tier{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
-.row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;font-size:20px;font-weight:700}
-.row em{font-style:normal;font-size:28px;margin-right:6px;vertical-align:-3px}
+.tier{margin:24px 0}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;font-size:24px;font-weight:700}
+.row em{font-style:normal;font-size:30px;margin-right:4px;vertical-align:-3px}
 .row span:last-child{color:var(--brand-ink);white-space:nowrap}
 .bar{height:26px;background:#e8e8e8}
 .bar i{display:block;height:100%;background:var(--brand);transition:width .3s}
