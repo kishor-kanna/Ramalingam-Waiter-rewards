@@ -98,6 +98,32 @@ h3{font-size:15px;margin:18px 0 2px}
 .items .day span b{color:var(--ink)}
 .items b.ok{color:var(--brand-ink)}
 
+/* Grooming check */
+.check{border-radius:12px;padding:12px 14px;margin:0 0 12px;font-size:14px;font-weight:600;line-height:1.4}
+.check.pending{background:#fff4dd;color:#7a4f00}
+.check.ok{background:#e8f4ec;color:#1d6b36}
+.check.no{background:var(--red-soft);color:var(--red)}
+.earned small{font-size:13px;font-weight:600;color:var(--mute)}
+.items .day small.bad{color:var(--red)}
+.ck{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.ck.busy{opacity:.5;pointer-events:none}
+.ckname{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ckname b{font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ckname small{font-size:13px;color:#7a4f00}
+.ckname small.ok{color:#1d6b36}
+.ckname small.no{color:var(--red)}
+.ckbtns{display:flex;gap:8px}
+.ckbtns button{width:52px;height:48px;border:1px solid #d9d5ca;border-radius:12px;background:#fff;font-size:20px;font-weight:700;color:var(--mute)}
+.ckbtns .ckok.on{background:#1d6b36;border-color:#1d6b36;color:#fff}
+.ckbtns .ckno.on{background:var(--red);border-color:var(--red);color:#fff}
+.reasons{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;padding-top:4px}
+.chip{min-height:40px;padding:8px 14px;border:1px solid #e3b7b2;border-radius:99px;background:var(--red-soft);color:var(--red);font-weight:600;font-size:14px}
+.chip.plain{border-color:#d9d5ca;background:#fff;color:var(--ink)}
+td.ckcell{text-align:center;font-weight:700;color:#7a4f00}
+td.ckcell.ok{color:#1d6b36}
+td.ckcell.no{color:var(--red)}
+td.warnc{color:#7a4f00;font-weight:700}
+
 /* Tabs */
 nav{display:flex;gap:4px;padding:4px;margin:0 0 12px;background:var(--soft);border-radius:12px;overflow-x:auto;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}

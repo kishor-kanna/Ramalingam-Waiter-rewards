@@ -5,12 +5,13 @@
  *
  * Roles:
  *   Waiter              – branch + name + PIN. Records sales.
- *   Branch manager      – branch + branch PIN. Live board, payouts, waiters for that branch.
+ *   Branch manager      – branch + branch PIN. Daily grooming check, live board, payouts, waiters.
  *   Operations manager  – ops PIN. Targets for every branch, branches, all payouts, backup.
  */
 const RESET_HOUR = 4;      // a new working day starts at 4 AM, so late-night sales stay on the same shift
 const KEEP_RAW_DAYS = 3;   // tap-by-tap rows are kept this long; daily totals stay forever in "Daily"
-const SCHEMA = '2';
+const SCHEMA = '3';
+const CHECK_REASONS = ['Not groomed', 'Late', 'Uniform', 'Other'];
 
 // The branch column is last in each sheet so data from the first version keeps its place.
 const HEAD = {
@@ -18,10 +19,11 @@ const HEAD = {
   Targets:  ['item', 'icon', 'qty', 'reward', 'branch'],
   Waiters:  ['name', 'pin', 'active', 'branch'],
   Sales:    ['time', 'shift', 'waiter', 'item', 'change', 'id', 'branch'],
-  Daily:    ['shift', 'waiter', 'item', 'sold', 'target', 'reward', 'earned', 'branch'],
+  Daily:    ['shift', 'waiter', 'item', 'sold', 'target', 'reward', 'earned', 'branch', 'check'],
+  Checks:   ['shift', 'branch', 'waiter', 'status', 'reason', 'by', 'time'],
   Settings: ['key', 'value']
 };
-const TEXT_COLS = { Branches: [2], Waiters: [2], Sales: [2], Daily: [1], Settings: [2] };
+const TEXT_COLS = { Branches: [2], Waiters: [2], Sales: [2], Daily: [1], Checks: [1], Settings: [2] };
 const DEFAULT_TARGETS = [['Soup', '🍲', 10, 100], ['Biryani', '🍛', 10, 200], ['Starter', '🍢', 10, 150], ['Beverage', '🥤', 10, 100]];
 
 const ACTIONS = {
@@ -37,6 +39,7 @@ const ACTIONS = {
   m_waiters: saveWaiters,
   m_payouts: managerPayouts,
   m_pin: changeBranchPin,
+  m_check: saveCheck,
   // operations manager
   o_state: opsState,
   o_targets: saveTargets,
@@ -96,11 +99,11 @@ function migrate() {
   if (!rows('Branches').length) replaceRows('Branches', [['Main', oldPin, true]]);
   var first = firstBranch();
   ['Targets', 'Waiters', 'Sales', 'Daily'].forEach(function (n) {
-    var sh = sheet(n), w = HEAD[n].length;
-    sh.getRange(1, w).setValue(HEAD[n][w - 1]).setFontWeight('bold');
+    var sh = sheet(n), bc = HEAD[n].indexOf('branch') + 1;
+    sh.getRange(1, 1, 1, HEAD[n].length).setValues([HEAD[n]]).setFontWeight('bold');
     var last = sh.getLastRow();
     if (last < 2) return;
-    var col = sh.getRange(2, w, last - 1, 1), v = col.getValues(), changed = false;
+    var col = sh.getRange(2, bc, last - 1, 1), v = col.getValues(), changed = false;
     v.forEach(function (r) { if (String(r[0]).trim() === '') { r[0] = first; changed = true; } });
     if (changed) col.setValues(v);
   });
@@ -108,6 +111,8 @@ function migrate() {
     replaceRows('Targets', DEFAULT_TARGETS.map(function (t) { return t.concat([first]); }));
   }
   if (s.ops_pin == null) setSetting('ops_pin', oldPin);
+  // grooming checks apply from the next working day; earlier days were paid without them
+  if (s.checks_from == null) setSetting('checks_from', addDays(shiftOf(new Date()), 1));
   setSetting('schema', SCHEMA);
 }
 
@@ -234,16 +239,29 @@ function getTargets(branch) { return targetsFrom(rows('Targets'), branch); }
 
 /** Reads the sheets once; ctx(branch) then gives that branch's slice. */
 function loader() {
-  var sales = rows('Sales'), daily = rows('Daily'), targets = rows('Targets');
+  var sales = rows('Sales'), daily = rows('Daily'), targets = rows('Targets'), checks = rows('Checks');
+  var from = settings().checks_from || '';
   return function (branch) {
-    var nb = norm(branch);
+    var nb = norm(branch), ck = {};
+    checks.forEach(function (r) {
+      if (norm(r[1]) === nb) ck[day(r[0]) + '|' + String(r[2])] = { status: String(r[3]), reason: String(r[4] || ''), by: String(r[5] || ''), time: r[6] };
+    });
     return {
       branch: branch,
       sales: sales.filter(function (r) { return norm(r[6]) === nb; }),
       daily: daily.filter(function (r) { return norm(r[7]) === nb; }),
-      targets: targetsFrom(targets, branch)
+      targets: targetsFrom(targets, branch),
+      checks: ck,
+      checksFrom: from
     };
   };
+}
+/** Today's grooming check for one waiter: ok, no (with reason), or pending. Past days without a check are "none". */
+function checkFor(ctx, shift, name) {
+  var c = ctx.checks[shift + '|' + name];
+  if (c) return { status: c.status, reason: c.reason, by: c.by, time: c.time ? Utilities.formatDate(new Date(c.time), tz(), 'h:mm a') : '' };
+  if (ctx.checksFrom && shift < ctx.checksFrom) return { status: 'ok', reason: '', before: true };   // before checks started
+  return { status: shift === shiftOf(new Date()) ? 'pending' : 'none', reason: '' };
 }
 function context(branch) { return loader()(branch); }
 
@@ -258,16 +276,18 @@ function countsFor(sales, shift, name) {
   });
   return c;
 }
-/** One row per waiter per item, worked out from the tap-by-tap log. Counts never go past the target. */
+/** One row per waiter per item, worked out from the tap-by-tap log. Counts never go past the target.
+ *  potential = reward for reaching the target; earned = potential only if the manager approved the waiter that day. */
 function liveRows(ctx, shift) {
   var all = countsFor(ctx.sales, shift), out = [];
   Object.keys(all).sort().forEach(function (w) {
-    var c = all[w];
+    var c = all[w], ck = checkFor(ctx, shift, w);
     ctx.targets.forEach(function (t) {
       var sold = Math.max(0, c[t.item] || 0);
       if (t.qty > 0) sold = Math.min(sold, t.qty);
+      var potential = t.qty > 0 && sold >= t.qty ? t.reward : 0;
       out.push({ shift: shift, branch: ctx.branch, waiter: w, item: t.item, sold: sold, target: t.qty, reward: t.reward,
-        earned: t.qty > 0 && sold >= t.qty ? t.reward : 0 });
+        potential: potential, earned: ck.status === 'ok' ? potential : 0, check: ck.status, reason: ck.reason });
     });
   });
   return out;
@@ -276,8 +296,12 @@ function liveRows(ctx, shift) {
 function shiftRows(ctx, shift) {
   var closed = ctx.daily.filter(function (r) { return day(r[0]) === shift; });
   if (closed.length) return closed.map(function (r) {
-    return { shift: shift, branch: ctx.branch, waiter: String(r[1]), item: String(r[2]), sold: Number(r[3]) || 0,
-      target: r[4], reward: r[5], earned: Number(r[6]) || 0 };
+    // days closed before grooming checks existed have no check value: they were paid as normal
+    var c = String(r[8] || '').trim(), i = c.indexOf(':'), sold = Number(r[3]) || 0, target = Number(r[4]) || 0;
+    return { shift: shift, branch: ctx.branch, waiter: String(r[1]), item: String(r[2]), sold: sold,
+      target: r[4], reward: r[5], earned: Number(r[6]) || 0,
+      potential: target > 0 && sold >= target ? Number(r[5]) || 0 : 0,
+      check: !c ? 'ok' : (i > 0 ? c.slice(0, i) : c), reason: i > 0 ? c.slice(i + 1) : '' };
   });
   return liveRows(ctx, shift);
 }
@@ -314,7 +338,7 @@ function waiterView(who, ctx) {
     if (counts[t.item] != null && t.qty > 0) counts[t.item] = Math.min(Math.max(0, counts[t.item]), t.qty);
   });
   return { ok: true, name: who.name, branch: who.branch, shift: shift, resetHour: RESET_HOUR,
-    targets: ctx.targets, counts: counts };
+    targets: ctx.targets, counts: counts, check: checkFor(ctx, shift, who.name) };
 }
 
 /** One waiter's month: totals, per-item totals and each day worked. r.month is "yyyy-MM" (default: this month). */
@@ -330,10 +354,10 @@ function waiterMonth(r) {
   ctx.targets.forEach(function (t, i) { icons[t.item] = t.icon; order[t.item] = i; });
   rangeRows(ctx, first, to).forEach(function (x) {
     if (x.waiter !== who.name || !(x.sold > 0)) return;
-    var d = days[x.shift] = days[x.shift] || { shift: x.shift, earned: 0, items: {} };
-    d.earned += x.earned; d.items[x.item] = (d.items[x.item] || 0) + x.sold;
+    var d = days[x.shift] = days[x.shift] || { shift: x.shift, earned: 0, potential: 0, check: x.check, reason: x.reason, items: {} };
+    d.earned += x.earned; d.potential += x.potential; d.items[x.item] = (d.items[x.item] || 0) + x.sold;
     var it = items[x.item] = items[x.item] || { item: x.item, icon: icons[x.item] || '', sold: 0, hits: 0, earned: 0 };
-    it.sold += x.sold; it.earned += x.earned; if (x.earned > 0) it.hits++;
+    it.sold += x.sold; it.earned += x.earned; if (x.potential > 0) it.hits++;
   });
   out.days = Object.keys(days).sort().reverse().map(function (k) { return days[k]; });
   out.items = Object.keys(items).map(function (k) { return items[k]; }).sort(function (a, b) {
@@ -372,9 +396,28 @@ function sync(r) {
 /* ---------- branch manager ---------- */
 
 function managerState(r) {
-  var b = branchManager(r), ctx = context(b.name), shift = shiftOf(new Date());
-  return { ok: true, branch: b.name, asOps: isOps(r), shift: shift, resetHour: RESET_HOUR,
-    targets: ctx.targets, waiters: waitersOf(b.name), today: liveRows(ctx, shift) };
+  var b = branchManager(r), ctx = context(b.name), shift = shiftOf(new Date()), waiters = waitersOf(b.name), checks = {};
+  waiters.forEach(function (w) { checks[w.name] = checkFor(ctx, shift, w.name); });
+  return { ok: true, branch: b.name, asOps: isOps(r), shift: shift, resetHour: RESET_HOUR, reasons: CHECK_REASONS, checksFrom: ctx.checksFrom,
+    targets: ctx.targets, waiters: waiters, checks: checks, today: liveRows(ctx, shift) };
+}
+
+/** Today's grooming check. status: ok (approved), no (not today, with a reason) or clear (undo). Can be changed all day. */
+function saveCheck(r) {
+  var b = branchManager(r), shift = shiftOf(new Date()), st = String(r.status || '');
+  var w = waitersOf(b.name).filter(function (x) { return norm(x.name) === norm(r.waiter); })[0];
+  if (!w) throw new Error('Unknown waiter');
+  if (['ok', 'no', 'clear'].indexOf(st) < 0) throw new Error('Unknown check');
+  var reason = st === 'no' ? String(r.reason || 'Other').trim().slice(0, 40) : '';
+  var row = [shift, b.name, w.name, st, reason, isOps(r) ? 'Operations' : 'Branch manager', new Date()];
+  withLock(function () {
+    var all = rows('Checks'), idx = -1;
+    all.forEach(function (x, i) { if (day(x[0]) === shift && norm(x[1]) === norm(b.name) && norm(x[2]) === norm(w.name)) idx = i; });
+    if (st === 'clear') { if (idx >= 0) deleteRows(sheet('Checks'), idx + 2, 1); }
+    else if (idx >= 0) sheet('Checks').getRange(idx + 2, 1, 1, row.length).setValues([row]);
+    else appendRows('Checks', [row]);
+  });
+  return managerState(r);
 }
 
 function saveWaiters(r) {
@@ -417,15 +460,19 @@ function opsState(r) {
   var list = allBranches().map(function (b) {
     var ctx = load(b.name), today = liveRows(ctx, shift), by = {};
     today.forEach(function (x) { by[x.waiter] = (by[x.waiter] || 0) + x.earned; });
+    var active = allW.filter(function (w) { return String(w[0]).trim() && norm(w[3]) === norm(b.name) && isActive(w[2]); });
+    var statuses = active.map(function (w) { return checkFor(ctx, shift, String(w[0]).trim()).status; });
     return {
       name: b.name, pin: b.pin, active: b.active, targets: ctx.targets,
-      waiters: allW.filter(function (w) { return String(w[0]).trim() && norm(w[3]) === norm(b.name) && isActive(w[2]); }).length,
+      waiters: active.length,
+      checked: statuses.filter(function (s) { return s !== 'pending'; }).length,
+      approved: statuses.filter(function (s) { return s === 'ok'; }).length,
       selling: Object.keys(by).length,
       hit: Object.keys(by).filter(function (w) { return by[w] > 0; }).length,
       earned: today.reduce(function (a, x) { return a + x.earned; }, 0)
     };
   });
-  return { ok: true, shift: shift, resetHour: RESET_HOUR, branches: list, lastBackup: p.last_backup || '',
+  return { ok: true, shift: shift, resetHour: RESET_HOUR, branches: list, checksFrom: p.checks_from || '', lastBackup: p.last_backup || '',
     github: !!PropertiesService.getScriptProperties().getProperty('GITHUB_TOKEN') };
 }
 
@@ -529,7 +576,7 @@ function closeShift(shift) {
     var ctx = load(b.name);
     if (ctx.sales.some(function (r) { return day(r[1]) === shift; })) any = true;
     liveRows(ctx, shift).forEach(function (x) {
-      out.push([x.shift, x.waiter, x.item, x.sold, x.target, x.reward, x.earned, x.branch]);
+      out.push([x.shift, x.waiter, x.item, x.sold, x.target, x.reward, x.earned, x.branch, x.check === 'no' ? 'no:' + x.reason : x.check]);
     });
   });
   if (!any) return shift + ': no sales';
@@ -546,9 +593,9 @@ function closeShift(shift) {
   });
   var gh;
   try {
-    var csvRows = out.map(function (x) { return [x[0], x[7]].concat(x.slice(1, 7)); });
+    var csvRows = out.map(function (x) { return [x[0], x[7]].concat(x.slice(1, 7), [x[8]]); });
     gh = pushToGitHub('data/' + shift + '.csv',
-      toCsv([['shift', 'branch', 'waiter', 'item', 'sold', 'target', 'reward', 'earned']].concat(csvRows)), 'Daily rewards ' + shift);
+      toCsv([['shift', 'branch', 'waiter', 'item', 'sold', 'target', 'reward', 'earned', 'check']].concat(csvRows)), 'Daily rewards ' + shift);
   } catch (e) { gh = 'failed (' + e.message + ')'; }
   return shift + ': saved, GitHub ' + gh;
 }
@@ -557,6 +604,10 @@ function prune() {
   var cutoff = Date.now() - KEEP_RAW_DAYS * 864e5, r = rows('Sales'), n = 0;
   while (n < r.length && new Date(r[n][0]).getTime() < cutoff) n++;
   if (n) withLock(function () { deleteRows(sheet('Sales'), 2, n); });
+  // grooming checks are copied into "Daily" when a day closes; keep a few days of the originals
+  var keepFrom = addDays(shiftOf(new Date()), -(KEEP_RAW_DAYS + 2)), c = rows('Checks');
+  var keep = c.filter(function (x) { return day(x[0]) >= keepFrom; });
+  if (keep.length < c.length) withLock(function () { replaceRows('Checks', keep); });
 }
 
 function pushToGitHub(path, text, message) {

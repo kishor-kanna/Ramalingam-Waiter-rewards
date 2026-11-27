@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-manager.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <main class="wide">
@@ -32,13 +32,21 @@
   <section id="app" hidden>
     <header class="top"><img src="img/logo.png" alt="Ramalingam Hotel" width="38" height="48"><div class="t"><div class="k">Branch manager</div><h1 id="title">Rewards</h1></div><button class="link" id="out">Sign out</button></header>
     <nav id="tabs">
-      <button data-tab="today" aria-pressed="true">Today</button>
+      <button data-tab="checkin" aria-pressed="true">Check-in</button>
+      <button data-tab="today" aria-pressed="false">Today</button>
       <button data-tab="payouts" aria-pressed="false">Payouts</button>
       <button data-tab="waiters" aria-pressed="false">Waiters</button>
       <button data-tab="settings" aria-pressed="false">Settings</button>
     </nav>
 
-    <div id="tab-today">
+    <div id="tab-checkin">
+      <div class="when" id="ckWhen"></div>
+      <div class="banner" id="ckSum"></div>
+      <p class="note" id="ckNote">Approve each waiter who has come groomed and on time. Only approved waiters are paid today’s rewards. You can change a decision any time today.</p>
+      <div id="ckList"></div>
+    </div>
+
+    <div id="tab-today" hidden>
       <div class="when" id="todayWhen"></div>
       <div class="banner" id="todaySum"></div>
       <div class="scroll"><table id="todayTable"></table></div>
@@ -92,7 +100,7 @@ const $ = id => document.getElementById(id);
 const rs = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const label = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'});
-let pin = '', branch = '', M = null, P = null, tab = 'today';
+let pin = '', branch = '', M = null, P = null, tab = 'checkin', openReasons = '';
 try { const s = JSON.parse(localStorage.getItem('rewards-branch-mgr') || '{}'); pin = s.pin || ''; branch = s.branch || ''; } catch (e) {}
 
 async function api(action, data) {
@@ -121,9 +129,55 @@ function show() {
   $('loginBox').hidden = !!M; $('app').hidden = !M;
   if (!M) return;
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === tab));
-  ['today', 'payouts', 'waiters', 'settings'].forEach(t => $('tab-' + t).hidden = t !== tab);
+  ['checkin', 'today', 'payouts', 'waiters', 'settings'].forEach(t => $('tab-' + t).hidden = t !== tab);
 }
-function renderAll() { $('title').textContent = M.branch + (M.asOps ? ' · ops view' : ''); renderToday(); renderWaiters(); show(); }
+function renderAll() { $('title').textContent = M.branch + (M.asOps ? ' · ops view' : ''); renderCheckin(); renderToday(); renderWaiters(); show(); }
+
+/* Check-in: the daily grooming check */
+const ckMark = c => c.status === 'ok' ? '✓' : c.status === 'no' ? '✗' : '–';
+function renderCheckin() {
+  if (!M.checks) { $('ckSum').textContent = 'Check-in needs the latest Apps Script. Ask the operations manager to update it.'; $('ckList').innerHTML = ''; return; }
+  const list = M.waiters.filter(w => w.active), C = M.checks || {};
+  const st = n => (C[n] || {status: 'pending'});
+  const done = list.filter(w => st(w.name).status !== 'pending' && !st(w.name).before).length;
+  const ok = list.filter(w => st(w.name).status === 'ok' && !st(w.name).before).length;
+  const startsLater = M.checksFrom && M.shift < M.checksFrom;
+  $('ckWhen').textContent = label(M.shift);
+  $('ckSum').innerHTML = startsLater
+    ? `Grooming checks start on <b>${label(M.checksFrom)}</b>. Today’s rewards are paid as before, but you can try it now.`
+    : `<b>${done} of ${list.length}</b> checked · ${ok} approved${done < list.length ? ` · <b>${list.length - done} waiting</b>` : ''}`;
+  const sorted = list.slice().sort((a, b) => (st(a.name).status === 'pending' ? 0 : 1) - (st(b.name).status === 'pending' ? 0 : 1) || a.name.localeCompare(b.name));
+  $('ckList').innerHTML = sorted.length ? sorted.map(w => {
+    const c = st(w.name), real = !c.before;
+    const text = !real || c.status === 'pending' ? 'Waiting for check'
+      : c.status === 'ok' ? `Approved${c.time ? ' · ' + esc(c.time) : ''}`
+      : `Not today: ${esc(c.reason)}${c.time ? ' · ' + esc(c.time) : ''}`;
+    return `<div class="ck" data-w="${esc(w.name)}">
+      <div class="ckname"><b>${esc(w.name)}</b><small class="${real ? c.status : 'pending'}">${text}</small></div>
+      <div class="ckbtns">
+        <button class="ckok ${real && c.status === 'ok' ? 'on' : ''}" data-act="ok" aria-label="Approve ${esc(w.name)}">✓</button>
+        <button class="ckno ${real && c.status === 'no' ? 'on' : ''}" data-act="no" aria-label="Not today for ${esc(w.name)}">✗</button>
+      </div>
+      <div class="reasons" ${openReasons === w.name ? '' : 'hidden'}>
+        ${(M.reasons || ['Not groomed', 'Late', 'Uniform', 'Other']).map(r => `<button class="chip" data-act="reason" data-reason="${esc(r)}">${esc(r)}</button>`).join('')}
+        ${real && c.status !== 'pending' ? '<button class="chip plain" data-act="clear">Undo check</button>' : ''}
+      </div>
+    </div>`;
+  }).join('') : '<p class="note">No waiters yet. Add them in the Waiters tab.</p>';
+}
+$('ckList').onclick = e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const name = b.closest('.ck').dataset.w, act = b.dataset.act;
+  if (act === 'no') { openReasons = openReasons === name ? '' : name; renderCheckin(); return; }
+  const body = act === 'reason' ? {status: 'no', reason: b.dataset.reason} : act === 'clear' ? {status: 'clear'} : {status: 'ok'};
+  openReasons = '';
+  b.closest('.ck').classList.add('busy');
+  run(null, async () => {
+    M = await api('m_check', Object.assign({waiter: name}, body));
+    renderCheckin(); renderToday();
+    toast(body.status === 'ok' ? name + ' approved' : body.status === 'no' ? name + ': not today (' + body.reason + ')' : name + ': check removed');
+  }).finally(() => renderCheckin());
+};
 
 /* Today */
 function renderToday() {
@@ -133,14 +187,15 @@ function renderToday() {
   const names = Object.keys(by).sort((a, b) => by[b].earned - by[a].earned || a.localeCompare(b));
   const total = names.reduce((a, n) => a + by[n].earned, 0), max = T.reduce((a, t) => a + t.reward, 0);
   $('todayWhen').textContent = label(M.shift) + ' · updated ' + new Date().toLocaleTimeString('en-IN', {hour: 'numeric', minute: '2-digit'});
-  $('todaySum').innerHTML = `<b>${rs(total)}</b> earned so far today · ${names.filter(n => by[n].earned).length} of ${names.length} waiters have hit a target · up to ${rs(max)} each`;
+  const waiting = M.today.filter(r => r.check === 'pending').reduce((a, r) => a + r.potential, 0);
+  $('todaySum').innerHTML = `<b>${rs(total)}</b> earned so far today · ${names.filter(n => by[n].earned).length} of ${names.length} waiters have earned a reward` + (waiting ? ` · <b>${rs(waiting)}</b> waiting for grooming checks` : '');
   $('todayTable').innerHTML =
-    `<thead><tr><th>Waiter</th>${T.map(t => `<th>${esc(t.icon)} ${esc(t.item)}<br>/${t.qty}</th>`).join('')}<th>Earned</th></tr></thead><tbody>` +
-    names.map(n => `<tr><td>${esc(n)}</td>${T.map(t => { const s = by[n].c[t.item] || 0; return `<td class="${s >= t.qty ? 'ok' : ''}">${s >= t.qty ? '✓ ' : ''}${s}</td>`; }).join('')}<td class="money">${rs(by[n].earned)}</td></tr>`).join('') +
-    `</tbody><tfoot><tr><td>Total</td>${T.map(t => `<td>${names.reduce((a, n) => a + (by[n].c[t.item] || 0), 0)}</td>`).join('')}<td class="money">${rs(total)}</td></tr></tfoot>`;
+    `<thead><tr><th>Waiter</th><th>Check</th>${T.map(t => `<th>${esc(t.icon)} ${esc(t.item)}<br>/${t.qty}</th>`).join('')}<th>Earned</th></tr></thead><tbody>` +
+    names.map(n => `<tr><td>${esc(n)}</td><td class="ckcell ${((M.checks || {})[n] || {}).status || 'pending'}">${ckMark((M.checks || {})[n] || {status: 'pending'})}</td>${T.map(t => { const s = by[n].c[t.item] || 0; return `<td class="${s >= t.qty ? 'ok' : ''}">${s >= t.qty ? '✓ ' : ''}${s}</td>`; }).join('')}<td class="money">${rs(by[n].earned)}</td></tr>`).join('') +
+    `</tbody><tfoot><tr><td>Total</td><td></td>${T.map(t => `<td>${names.reduce((a, n) => a + (by[n].c[t.item] || 0), 0)}</td>`).join('')}<td class="money">${rs(total)}</td></tr></tfoot>`;
 }
 async function refreshToday(btn) {
-  await run(btn, async () => { M = await api('m_state', {}); renderToday(); });
+  await run(btn, async () => { M = await api('m_state', {}); renderToday(); renderCheckin(); });
 }
 
 /* Payouts */
@@ -235,7 +290,7 @@ $('out').onclick = () => signOut();
 $('tabs').onclick = e => {
   const b = e.target.closest('button'); if (!b) return;
   tab = b.dataset.tab; show();
-  if (tab === 'today') refreshToday();
+  if (tab === 'today' || tab === 'checkin') refreshToday();
   if (tab === 'payouts' && !P) showPayouts();
 };
 $('refresh').onclick = e => refreshToday(e.target);
@@ -257,7 +312,7 @@ $('pinForm').onsubmit = e => {
   run(e.submitter, async () => { await api('m_pin', {newPin: a}); if (!M.asOps) { pin = a; try { localStorage.setItem('rewards-branch-mgr', JSON.stringify({branch, pin})); } catch (x) {} } $('pinForm').reset(); toast('Branch PIN changed'); });
 };
 
-setInterval(() => { if (M && tab === 'today' && !document.hidden) refreshToday(); }, 30000);
+setInterval(() => { if (M && (tab === 'today' || tab === 'checkin') && !document.hidden && !openReasons) refreshToday(); }, 30000);
 show();
 if (pin) signIn(branch, pin).catch(e => signOut(e.message)); else { show(); loadBranches(); }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

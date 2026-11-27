@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-ops.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <main class="wide">
@@ -169,9 +169,9 @@ function renderOverview() {
   const B = O.branches.filter(b => b.active), total = B.reduce((a, b) => a + b.earned, 0);
   $('ovWhen').textContent = label(O.shift) + ' · updated ' + new Date().toLocaleTimeString('en-IN', {hour: 'numeric', minute: '2-digit'});
   $('ovSum').innerHTML = `<b>${rs(total)}</b> earned today across ${B.length} branch${B.length === 1 ? '' : 'es'}`+` · ${plural(B.reduce((a, b) => a + b.hit, 0), 'waiter')} hit a target`;
-  $('ovTable').innerHTML = `<thead><tr><th>Branch</th><th>Waiters</th><th>Selling</th><th>Hit target</th><th>Earned</th></tr></thead><tbody>` +
-    B.map(b => `<tr class="click ${b.name === boardBranch ? 'sel' : ''}" data-branch="${esc(b.name)}"><td>${esc(b.name)}</td><td>${b.waiters}</td><td>${b.selling}</td><td>${b.hit}</td><td class="money">${rs(b.earned)}</td></tr>`).join('') +
-    `</tbody><tfoot><tr><td>Total</td><td>${B.reduce((a, b) => a + b.waiters, 0)}</td><td>${B.reduce((a, b) => a + b.selling, 0)}</td><td>${B.reduce((a, b) => a + b.hit, 0)}</td><td class="money">${rs(total)}</td></tr></tfoot>`;
+  $('ovTable').innerHTML = `<thead><tr><th>Branch</th><th>Waiters</th><th>Checked</th><th>Hit target</th><th>Earned</th></tr></thead><tbody>` +
+    B.map(b => `<tr class="click ${b.name === boardBranch ? 'sel' : ''}" data-branch="${esc(b.name)}"><td>${esc(b.name)}</td><td>${b.waiters}</td><td class="${b.checked < b.waiters && !(O.checksFrom && O.shift < O.checksFrom) ? 'warnc' : ''}">${O.checksFrom && O.shift < O.checksFrom ? '–' : (b.checked || 0) + '/' + b.waiters}</td><td>${b.hit}</td><td class="money">${rs(b.earned)}</td></tr>`).join('') +
+    `</tbody><tfoot><tr><td>Total</td><td>${B.reduce((a, b) => a + b.waiters, 0)}</td><td>${O.checksFrom && O.shift < O.checksFrom ? '–' : B.reduce((a, b) => a + (b.checked || 0), 0) + '/' + B.reduce((a, b) => a + b.waiters, 0)}</td><td>${B.reduce((a, b) => a + b.hit, 0)}</td><td class="money">${rs(total)}</td></tr></tfoot>`;
 }
 async function loadBoard(name) {
   boardBranch = name; renderOverview();
@@ -183,8 +183,8 @@ async function loadBoard(name) {
   $('board').hidden = false;
   $('boardTitle').textContent = M.branch + ' – today';
   $('boardTable').innerHTML = names.length ?
-    `<thead><tr><th>Waiter</th>${T.map(t => `<th>${esc(t.icon)} ${esc(t.item)}<br>/${t.qty}</th>`).join('')}<th>Earned</th></tr></thead><tbody>` +
-    names.map(n => `<tr><td>${esc(n)}</td>${T.map(t => { const s = by[n].c[t.item] || 0; return `<td class="${s >= t.qty ? 'ok' : ''}">${s >= t.qty ? '✓ ' : ''}${s}</td>`; }).join('')}<td class="money">${rs(by[n].earned)}</td></tr>`).join('') + '</tbody>'
+    `<thead><tr><th>Waiter</th><th>Check</th>${T.map(t => `<th>${esc(t.icon)} ${esc(t.item)}<br>/${t.qty}</th>`).join('')}<th>Earned</th></tr></thead><tbody>` +
+    names.map(n => { const c = (M.checks || {})[n] || {status: 'pending'}; return `<tr><td>${esc(n)}</td><td class="ckcell ${c.status}">${c.status === 'ok' ? '✓' : c.status === 'no' ? '✗' : '–'}</td>${T.map(t => { const s = by[n].c[t.item] || 0; return `<td class="${s >= t.qty ? 'ok' : ''}">${s >= t.qty ? '✓ ' : ''}${s}</td>`; }).join('')}<td class="money">${rs(by[n].earned)}</td></tr>`; }).join('') + '</tbody>'
     : '<tbody><tr><td>No waiters in this branch yet</td></tr></tbody>';
 }
 async function refresh(btn) {

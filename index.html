@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-waiter.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <main>
@@ -34,6 +34,7 @@
     <header class="top"><img src="img/logo.png" alt="Ramalingam Hotel" width="38" height="48"><div class="t"><div class="k" id="where"></div><h1>Today's rewards</h1></div><button class="link" id="out">Sign out</button></header>
     <div class="when"><span id="who"></span> · <span id="date"></span></div>
     <div class="status" id="status" role="status"></div>
+    <div class="check" id="check" hidden></div>
     <div class="banner" id="banner"></div>
     <div class="earned"><span>Earned today</span><b id="earned"></b></div>
     <div id="tiers"></div>
@@ -101,6 +102,10 @@ function counts() {
   return c;
 }
 const earnedNow = c => targets().reduce((a, t) => a + (t.qty > 0 && c[t.item] >= t.qty ? t.reward : 0), 0);
+// Today's grooming check from the manager: ok, no or pending. Rewards only count when it's ok.
+const checkNow = () => !S.server || !('check' in S.server) ? {status: 'ok', before: true}   // older Sheet script: no checks yet
+  : (S.server.shift === shiftOf(Date.now()) && S.server.check) || {status: 'pending'};
+const paidNow = c => (checkNow().status === 'ok' ? earnedNow(c) : 0);
 function undoStack() {
   const shift = shiftOf(Date.now());
   if (S.undo.shift !== shift) S.undo = {shift, stack: []};
@@ -117,7 +122,16 @@ function render() {
   $('who').textContent = S.user.name;
   $('where').textContent = S.user.branch || (S.server && S.server.branch) || '';
   $('date').textContent = label(shiftOf(Date.now()));
-  $('earned').textContent = rs(earned);
+  const ck = checkNow();
+  $('earned').innerHTML = ck.status === 'ok' ? rs(earned)
+    : ck.status === 'no' ? `${rs(0)}${earned ? ` <small>${rs(earned)} not approved</small>` : ''}`
+    : `${rs(earned)}${earned ? ' <small>pending</small>' : ''}`;
+  const box = $('check');
+  box.hidden = !S.server || ck.before;
+  box.className = 'check ' + ck.status;
+  box.textContent = ck.status === 'ok' ? `✓ Approved for today${ck.time ? ' at ' + ck.time : ''}. Your rewards count.`
+    : ck.status === 'no' ? `✗ Not approved today${ck.reason ? ': ' + ck.reason : ''}. Sales are still recorded, but today's rewards won't be paid.`
+    : '⏳ Waiting for your manager’s grooming check. Rewards count once you’re approved.';
   $('banner').textContent = !S.server ? 'Loading today’s targets…'
     : earned === max ? `All targets complete. You earned ${rs(max)} today!`
     : `Hit each item's target to earn up to ${rs(max)} today`;
@@ -168,14 +182,20 @@ function renderMonth() {
   if (viewMonth === now) {
     // swap in today's live numbers so a tap shows up here straight away
     const old = days.find(d => d.shift === today);
-    if (old) Object.entries(old.items).forEach(([k, n]) => { const it = items[k]; if (it) { it.sold -= n; if (old.earned && targets().some(t => t.item === k && n >= t.qty)) { it.hits--; it.earned -= targets().find(t => t.item === k).reward; } } });
+    if (old) Object.entries(old.items).forEach(([k, n]) => {
+      const it = items[k], t = targets().find(x => x.item === k);
+      if (!it) return;
+      it.sold -= n;
+      if (t && n >= t.qty) { it.hits--; if (old.earned) it.earned -= t.reward; }
+    });
     days = days.filter(d => d.shift !== today);
-    const c = counts(), live = {shift: today, earned: earnedNow(c), items: {}};
+    const c = counts(), ck = checkNow(), ok = ck.status === 'ok';
+    const live = {shift: today, earned: paidNow(c), potential: earnedNow(c), check: ck.status, reason: ck.reason || '', items: {}};
     targets().forEach(t => {
       const n = c[t.item] || 0; if (!n) return;
       live.items[t.item] = n;
       const it = items[t.item] = items[t.item] || {item: t.item, icon: t.icon, sold: 0, hits: 0, earned: 0};
-      it.sold += n; if (n >= t.qty) { it.hits++; it.earned += t.reward; }
+      it.sold += n; if (n >= t.qty) { it.hits++; if (ok) it.earned += t.reward; }
     });
     if (Object.keys(live.items).length) days.unshift(live);
   }
@@ -188,7 +208,11 @@ function renderMonth() {
   $('mHits').textContent = list.reduce((a, i) => a + i.hits, 0);
   $('mItems').innerHTML = list.map(i => `<div><span>${esc(i.icon || icon[i.item] || '')} ${esc(i.item)}</span><span>${i.sold} sold${i.hits ? ` · <b class="ok">${i.hits}× target</b>` : ''}</span></div>`).join('');
   $('mDayTitle').hidden = !days.length;
-  $('mList').innerHTML = days.map(d => `<div class="day"><span><b>${d.shift === today ? 'Today' : label(d.shift)}</b><small>${Object.entries(d.items).map(([k, n]) => n + ' ' + esc(k)).join(' · ')}</small></span><b class="${d.earned ? 'ok' : ''}">${rs(d.earned)}</b></div>`).join('');
+  const dayNote = d => !d.potential && d.check !== 'no' ? ''
+    : d.check === 'no' ? `<small class="bad">Not approved${d.reason ? ': ' + esc(d.reason) : ''} · ${rs(d.potential)} missed</small>`
+    : d.check === 'none' ? `<small class="bad">No grooming check · ${rs(d.potential)} missed</small>`
+    : d.check === 'pending' ? `<small>Waiting for grooming check</small>` : '';
+  $('mList').innerHTML = days.map(d => `<div class="day"><span><b>${d.shift === today ? 'Today' : label(d.shift)}</b><small>${Object.entries(d.items).map(([k, n]) => n + ' ' + esc(k)).join(' · ')}</small>${dayNote(d)}</span><b class="${d.earned ? 'ok' : ''}">${rs(d.earned)}</b></div>`).join('');
   $('mNote').textContent = S.monthError || (days.length ? '' : (viewMonth === now ? 'Your sales this month will show here.' : 'No sales in ' + monthName(viewMonth) + '.'));
 }
 $('mprev').onclick = () => { viewMonth = shiftMonth(viewMonth, -1); renderMonth(); loadMonth(); };
@@ -205,8 +229,8 @@ function record(item, change) {
   S.queue.push({id: uid(), item, change, t: Date.now()});
   if (change > 0) undoStack().push(item); else undoStack().pop();
   save(); render();
-  const gain = earnedNow(counts()) - earnedNow(before);
-  if (gain > 0) toast(`🎉 ${rs(gain)} earned!`);
+  const gain = earnedNow(counts()) - earnedNow(before), st = checkNow().status;
+  if (gain > 0) toast(st === 'ok' ? `🎉 ${rs(gain)} earned!` : st === 'no' ? 'Target reached' : `🎉 Target reached! ${rs(gain)} once approved`);
   scheduleSync(700);
 }
 

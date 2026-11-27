@@ -114,8 +114,15 @@ The token is stored only in the script's settings. It never appears in the web p
 - **Payouts** – one branch or all branches, any dates. **Copy totals** pastes into a spreadsheet.
 - **Settings** – backup status, **Back up yesterday now**, and the operations PIN.
 
+**Daily grooming check.** Rewards are only paid to waiters the branch manager approves each day: groomed, in uniform and on time.
+- The manager opens **Check-in** at the start of the shift and taps **✓** or **✗** for each waiter. ✗ asks for a reason (Not groomed, Late, Uniform, Other). Decisions can be changed or undone any time that day.
+- Waiters see *Waiting for grooming check*, *Approved* or *Not approved: reason* at the top of their page. They can tap sales either way, but rupees only count once approved.
+- **A waiter nobody checks that day is not paid** for it. The ops overview shows how many waiters each branch has checked.
+- Payouts, the month view and the GitHub backup only include approved days. The backup has a `check` column (`ok`, `no:Late`, `none`).
+
 **The branch manager page** (`manager.html`) shows only that branch:
-- **Today** – every waiter's live counts and earnings, refreshed every 30 seconds.
+- **Check-in** – the daily grooming check (opens first).
+- **Today** – every waiter's live counts, check status and earnings, refreshed every 30 seconds.
 - **Payouts** – what each waiter earned between two dates.
 - **Waiters** – add waiters, each with a PIN (one is generated for you). Untick *On* when someone leaves; their history is kept. The same name can be used in different branches.
 - **Settings** – change the branch PIN.
