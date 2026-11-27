@@ -11,7 +11,12 @@
 const RESET_HOUR = 4;      // a new working day starts at 4 AM, so late-night sales stay on the same shift
 const KEEP_RAW_DAYS = 3;   // tap-by-tap rows are kept this long; daily totals stay forever in "Daily"
 const SCHEMA = '3';
-const CHECK_REASONS = ['Not groomed', 'Late', 'Uniform', 'Other'];
+// The three things a manager checks. A waiter is approved only when all three are ticked.
+const CHECKS = [
+  { key: 'groomed', label: 'Groomed', missing: 'Not groomed' },
+  { key: 'uniform', label: 'Uniform', missing: 'No uniform' },
+  { key: 'ontime',  label: 'On time', missing: 'Late' }
+];
 
 // The branch column is last in each sheet so data from the first version keeps its place.
 const HEAD = {
@@ -259,7 +264,11 @@ function loader() {
 /** Today's grooming check for one waiter: ok, no (with reason), or pending. Past days without a check are "none". */
 function checkFor(ctx, shift, name) {
   var c = ctx.checks[shift + '|' + name];
-  if (c) return { status: c.status, reason: c.reason, by: c.by, time: c.time ? Utilities.formatDate(new Date(c.time), tz(), 'h:mm a') : '' };
+  if (c) {
+    var flags = {};
+    CHECKS.forEach(function (k) { flags[k.key] = c.status === 'ok' || c.reason.indexOf(k.missing) < 0; });
+    return { status: c.status, reason: c.reason, flags: flags, by: c.by, time: c.time ? Utilities.formatDate(new Date(c.time), tz(), 'h:mm a') : '' };
+  }
   if (ctx.checksFrom && shift < ctx.checksFrom) return { status: 'ok', reason: '', before: true };   // before checks started
   return { status: shift === shiftOf(new Date()) ? 'pending' : 'none', reason: '' };
 }
@@ -398,17 +407,22 @@ function sync(r) {
 function managerState(r) {
   var b = branchManager(r), ctx = context(b.name), shift = shiftOf(new Date()), waiters = waitersOf(b.name), checks = {};
   waiters.forEach(function (w) { checks[w.name] = checkFor(ctx, shift, w.name); });
-  return { ok: true, branch: b.name, asOps: isOps(r), shift: shift, resetHour: RESET_HOUR, reasons: CHECK_REASONS, checksFrom: ctx.checksFrom,
+  return { ok: true, branch: b.name, asOps: isOps(r), shift: shift, resetHour: RESET_HOUR, criteria: CHECKS, checksFrom: ctx.checksFrom,
     targets: ctx.targets, waiters: waiters, checks: checks, today: liveRows(ctx, shift) };
 }
 
-/** Today's grooming check. status: ok (approved), no (not today, with a reason) or clear (undo). Can be changed all day. */
+/** Today's grooming check. r.flags = {groomed, uniform, ontime}: approved only when all three are true.
+ *  r.status 'clear' removes the check (undo). Can be changed all day. */
 function saveCheck(r) {
-  var b = branchManager(r), shift = shiftOf(new Date()), st = String(r.status || '');
+  var b = branchManager(r), shift = shiftOf(new Date()), st = String(r.status || ''), reason = '';
   var w = waitersOf(b.name).filter(function (x) { return norm(x.name) === norm(r.waiter); })[0];
   if (!w) throw new Error('Unknown waiter');
+  if (r.flags) {
+    var missing = CHECKS.filter(function (k) { return !r.flags[k.key]; }).map(function (k) { return k.missing; });
+    st = missing.length ? 'no' : 'ok';
+    reason = missing.join(', ');
+  } else if (st === 'no') reason = String(r.reason || 'Other').trim().slice(0, 40);
   if (['ok', 'no', 'clear'].indexOf(st) < 0) throw new Error('Unknown check');
-  var reason = st === 'no' ? String(r.reason || 'Other').trim().slice(0, 40) : '';
   var row = [shift, b.name, w.name, st, reason, isOps(r) ? 'Operations' : 'Branch manager', new Date()];
   withLock(function () {
     var all = rows('Checks'), idx = -1;

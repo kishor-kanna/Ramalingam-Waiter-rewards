@@ -115,7 +115,8 @@ The token is stored only in the script's settings. It never appears in the web p
 - **Settings** – backup status, **Back up yesterday now**, and the operations PIN.
 
 **Daily grooming check.** Rewards are only paid to waiters the branch manager approves each day: groomed, in uniform and on time.
-- The manager opens **Check-in** at the start of the shift and taps **✓** or **✗** for each waiter. ✗ asks for a reason (Not groomed, Late, Uniform, Other). Decisions can be changed or undone any time that day.
+- The manager opens **Check-in** at the start of the shift and, for each waiter, ticks **💇 Groomed**, **👔 Uniform** and **⏰ On time**. All three ticked = approved. A tick left off becomes the reason the waiter sees (Not groomed, No uniform, Late). **↺** undoes the check. Ticks can be changed any time that day.
+- A waiter who isn't approved gets a faint red glow around their screen and a message telling them what to fix.
 - Waiters see *Waiting for grooming check*, *Approved* or *Not approved: reason* at the top of their page. They can tap sales either way, but rupees only count once approved.
 - **A waiter nobody checks that day is not paid** for it. The ops overview shows how many waiters each branch has checked.
 - Payouts, the month view and the GitHub backup only include approved days. The backup has a `check` column (`ok`, `no:Late`, `none`).

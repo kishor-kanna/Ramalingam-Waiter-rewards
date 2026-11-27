@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-manager.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <main class="wide">
@@ -42,7 +42,7 @@
     <div id="tab-checkin">
       <div class="when" id="ckWhen"></div>
       <div class="banner" id="ckSum"></div>
-      <p class="note" id="ckNote">Approve each waiter who has come groomed and on time. Only approved waiters are paid today’s rewards. You can change a decision any time today.</p>
+      <p class="note" id="ckNote">Tick <b>Groomed</b>, <b>Uniform</b> and <b>On time</b> for each waiter. Only waiters with all three ticked are paid today’s rewards. Leave a tick off to show why, or tap ↺ to undo. You can change it any time today.</p>
       <div id="ckList"></div>
     </div>
 
@@ -100,7 +100,7 @@ const $ = id => document.getElementById(id);
 const rs = n => '₹' + Number(n || 0).toLocaleString('en-IN');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const label = s => new Date(s + 'T12:00:00').toLocaleDateString('en-IN', {weekday:'short', day:'numeric', month:'short'});
-let pin = '', branch = '', M = null, P = null, tab = 'checkin', openReasons = '';
+let pin = '', branch = '', M = null, P = null, tab = 'checkin';
 try { const s = JSON.parse(localStorage.getItem('rewards-branch-mgr') || '{}'); pin = s.pin || ''; branch = s.branch || ''; } catch (e) {}
 
 async function api(action, data) {
@@ -133,50 +133,73 @@ function show() {
 }
 function renderAll() { $('title').textContent = M.branch + (M.asOps ? ' · ops view' : ''); renderCheckin(); renderToday(); renderWaiters(); show(); }
 
-/* Check-in: the daily grooming check */
+/* Check-in: the daily grooming check. Three ticks per waiter; approved only when all three are on. */
+const CRIT = [{key: 'groomed', label: 'Groomed', icon: '💇'}, {key: 'uniform', label: 'Uniform', icon: '👔'}, {key: 'ontime', label: 'On time', icon: '⏰'}];
 const ckMark = c => c.status === 'ok' ? '✓' : c.status === 'no' ? '✗' : '–';
+const want = {}, inflight = {}, dirty = {};          // taps not yet confirmed by the Sheet, per waiter
+const MISSING = {groomed: 'Not groomed', uniform: 'No uniform', ontime: 'Late'};
+const missingText = f => CRIT.filter(k => !f[k.key]).map(k => MISSING[k.key]).join(', ');
+function checkOf(name) {
+  if (want[name] !== undefined) {                     // show the tap straight away
+    if (want[name] === null) return {status: 'pending'};
+    const miss = missingText(want[name]);
+    return {status: miss ? 'no' : 'ok', reason: miss, flags: want[name], saving: true};
+  }
+  const c = (M.checks || {})[name] || {status: 'pending'};
+  return c.before ? {status: 'pending', before: true} : c;
+}
 function renderCheckin() {
   if (!M.checks) { $('ckSum').textContent = 'Check-in needs the latest Apps Script. Ask the operations manager to update it.'; $('ckList').innerHTML = ''; return; }
-  const list = M.waiters.filter(w => w.active), C = M.checks || {};
-  const st = n => (C[n] || {status: 'pending'});
-  const done = list.filter(w => st(w.name).status !== 'pending' && !st(w.name).before).length;
-  const ok = list.filter(w => st(w.name).status === 'ok' && !st(w.name).before).length;
+  const list = M.waiters.filter(w => w.active);
+  const done = list.filter(w => checkOf(w.name).status !== 'pending').length;
+  const ok = list.filter(w => checkOf(w.name).status === 'ok').length;
   const startsLater = M.checksFrom && M.shift < M.checksFrom;
   $('ckWhen').textContent = label(M.shift);
-  $('ckSum').innerHTML = startsLater
-    ? `Grooming checks start on <b>${label(M.checksFrom)}</b>. Today’s rewards are paid as before, but you can try it now.`
-    : `<b>${done} of ${list.length}</b> checked · ${ok} approved${done < list.length ? ` · <b>${list.length - done} waiting</b>` : ''}`;
-  const sorted = list.slice().sort((a, b) => (st(a.name).status === 'pending' ? 0 : 1) - (st(b.name).status === 'pending' ? 0 : 1) || a.name.localeCompare(b.name));
+  $('ckSum').innerHTML = (startsLater ? `Grooming checks start on <b>${label(M.checksFrom)}</b>. Today’s rewards are paid as before, but you can try it now.<br>` : '')
+    + `<b>${done} of ${list.length}</b> checked · ${ok} approved${done < list.length ? ` · <b>${list.length - done} waiting</b>` : ''}`;
+  const rank = n => checkOf(n).status === 'pending' ? 0 : 1;
+  const sorted = list.slice().sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name));
   $('ckList').innerHTML = sorted.length ? sorted.map(w => {
-    const c = st(w.name), real = !c.before;
-    const text = !real || c.status === 'pending' ? 'Waiting for check'
-      : c.status === 'ok' ? `Approved${c.time ? ' · ' + esc(c.time) : ''}`
-      : `Not today: ${esc(c.reason)}${c.time ? ' · ' + esc(c.time) : ''}`;
+    const c = checkOf(w.name), f = c.flags || {}, on = k => c.status !== 'pending' && !!f[k];
+    const text = c.status === 'pending' ? 'Waiting for check'
+      : c.status === 'ok' ? `Approved${c.time && !c.saving ? ' · ' + esc(c.time) : ''}`
+      : `Not approved: ${esc(c.reason)}`;
     return `<div class="ck" data-w="${esc(w.name)}">
-      <div class="ckname"><b>${esc(w.name)}</b><small class="${real ? c.status : 'pending'}">${text}</small></div>
+      <div class="ckname"><b>${esc(w.name)}</b><small class="${c.status}">${text}${c.saving ? ' · saving…' : ''}</small></div>
       <div class="ckbtns">
-        <button class="ckok ${real && c.status === 'ok' ? 'on' : ''}" data-act="ok" aria-label="Approve ${esc(w.name)}">✓</button>
-        <button class="ckno ${real && c.status === 'no' ? 'on' : ''}" data-act="no" aria-label="Not today for ${esc(w.name)}">✗</button>
-      </div>
-      <div class="reasons" ${openReasons === w.name ? '' : 'hidden'}>
-        ${(M.reasons || ['Not groomed', 'Late', 'Uniform', 'Other']).map(r => `<button class="chip" data-act="reason" data-reason="${esc(r)}">${esc(r)}</button>`).join('')}
-        ${real && c.status !== 'pending' ? '<button class="chip plain" data-act="clear">Undo check</button>' : ''}
+        ${CRIT.map(k => `<button class="crit ${on(k.key) ? 'on' : ''}" data-key="${k.key}" aria-pressed="${on(k.key)}"><span aria-hidden="true">${k.icon}</span>${k.label}</button>`).join('')}
+        <button class="undo" data-key="undo" aria-label="Undo check for ${esc(w.name)}" ${c.status === 'pending' ? 'disabled' : ''}>↺</button>
       </div>
     </div>`;
   }).join('') : '<p class="note">No waiters yet. Add them in the Waiters tab.</p>';
 }
+async function sendCheck(name) {
+  if (inflight[name]) { dirty[name] = true; return; }
+  inflight[name] = true;
+  let failed = false;
+  do {
+    dirty[name] = false;
+    const f = want[name];
+    try {
+      const res = await api('m_check', f === null ? {waiter: name, status: 'clear'} : {waiter: name, flags: f});
+      M.checks = res.checks; M.today = res.today;    // the rest of the page stays as it is
+    } catch (e) { toast(e.message, true); failed = true; break; }
+  } while (dirty[name]);
+  if (failed || !dirty[name]) delete want[name];
+  inflight[name] = false;
+  renderCheckin(); renderToday();
+}
 $('ckList').onclick = e => {
-  const b = e.target.closest('button[data-act]'); if (!b) return;
-  const name = b.closest('.ck').dataset.w, act = b.dataset.act;
-  if (act === 'no') { openReasons = openReasons === name ? '' : name; renderCheckin(); return; }
-  const body = act === 'reason' ? {status: 'no', reason: b.dataset.reason} : act === 'clear' ? {status: 'clear'} : {status: 'ok'};
-  openReasons = '';
-  b.closest('.ck').classList.add('busy');
-  run(null, async () => {
-    M = await api('m_check', Object.assign({waiter: name}, body));
-    renderCheckin(); renderToday();
-    toast(body.status === 'ok' ? name + ' approved' : body.status === 'no' ? name + ': not today (' + body.reason + ')' : name + ': check removed');
-  }).finally(() => renderCheckin());
+  const b = e.target.closest('button[data-key]'); if (!b || b.disabled) return;
+  const name = b.closest('.ck').dataset.w, key = b.dataset.key, c = checkOf(name);
+  if (key === 'undo') want[name] = null;
+  else {
+    const f = c.status === 'pending' ? {groomed: false, uniform: false, ontime: false} : Object.assign({}, c.flags);
+    f[key] = !f[key];
+    want[name] = f;
+  }
+  renderCheckin();
+  sendCheck(name);
 };
 
 /* Today */
@@ -312,7 +335,7 @@ $('pinForm').onsubmit = e => {
   run(e.submitter, async () => { await api('m_pin', {newPin: a}); if (!M.asOps) { pin = a; try { localStorage.setItem('rewards-branch-mgr', JSON.stringify({branch, pin})); } catch (x) {} } $('pinForm').reset(); toast('Branch PIN changed'); });
 };
 
-setInterval(() => { if (M && (tab === 'today' || tab === 'checkin') && !document.hidden && !openReasons) refreshToday(); }, 30000);
+setInterval(() => { if (M && (tab === 'today' || tab === 'checkin') && !document.hidden && !Object.keys(want).length) refreshToday(); }, 30000);
 show();
 if (pin) signIn(branch, pin).catch(e => signOut(e.message)); else { show(); loadBranches(); }
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

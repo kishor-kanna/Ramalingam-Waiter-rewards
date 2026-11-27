@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest-waiter.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
 <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <main>
@@ -129,10 +129,15 @@ function render() {
   const box = $('check');
   box.hidden = !S.server || ck.before;
   box.className = 'check ' + ck.status;
-  box.textContent = ck.status === 'ok' ? `✓ Approved for today${ck.time ? ' at ' + ck.time : ''}. Your rewards count.`
-    : ck.status === 'no' ? `✗ Not approved today${ck.reason ? ': ' + ck.reason : ''}. Sales are still recorded, but today's rewards won't be paid.`
-    : '⏳ Waiting for your manager’s grooming check. Rewards count once you’re approved.';
+  box.textContent = ck.status === 'ok' ? `✓ Approved for today${ck.time ? ' at ' + ck.time : ''}`
+    : ck.status === 'no' ? `✗ Not approved today${ck.reason ? ': ' + ck.reason : ''}`
+    : '⏳ Waiting for grooming check';
+  const ckState = checkNow();
+  document.body.classList.toggle('not-approved', !!S.server && ckState.status === 'no');
+  $('banner').classList.toggle('bad', !!S.server && ckState.status === 'no');
   $('banner').textContent = !S.server ? 'Loading today’s targets…'
+    : ckState.status === 'no' ? `Not approved today. Fix your grooming, uniform or timing and ask your manager to approve you, to earn up to ${rs(max)} today.`
+    : ckState.status === 'pending' ? `Get your manager’s approval for grooming, uniform and coming on time, then hit each item's target to earn up to ${rs(max)} today.`
     : earned === max ? `All targets complete. You earned ${rs(max)} today!`
     : `Hit each item's target to earn up to ${rs(max)} today`;
   $('tiers').innerHTML = T.map(t => {
@@ -309,7 +314,8 @@ $('undo').onclick = () => { const st = undoStack(); if (st.length) record(st[st.
 $('out').onclick = () => {
   if (S.queue.length) { toast('Wait — taps still saving'); sync(); return; }
   S = {user: null, server: null, queue: [], undo: {shift: '', stack: []}, error: '', months: {}};
-  save(); loadBranches(); render();
+  save();
+  document.body.classList.remove('not-approved'); loadBranches(); render();
 };
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); sync(); loadMonth(); } });
